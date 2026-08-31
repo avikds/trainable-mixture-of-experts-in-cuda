@@ -600,8 +600,35 @@ __global__ void normalize_topk_gates_backward_kernel(
     }
 }
 
-# Step 17 - router_logits_forward (not yet solved)
-# TODO: implement
+# Step 17 - router_logits_forward
+void router_logits_forward(
+    const float* X,
+    const float* Wg,
+    float* logits,
+    int T,
+    int D,
+    int E
+) {
+    // Use 16x16 blocks, matching matmul_tiled_kernel.
+    dim3 block(16, 16);
+    dim3 grid(
+        (E + 15) / 16,
+        (T + 15) / 16
+    );
+
+    // Compute:
+    // X     : T x D
+    // Wg    : D x E
+    // logits: T x E
+    matmul_tiled_kernel<<<grid, block>>>(
+        X,
+        Wg,
+        logits,
+        T,
+        E,
+        D
+    );
+}
 
 # Step 18 - router_softmax_forward (not yet solved)
 # TODO: implement
