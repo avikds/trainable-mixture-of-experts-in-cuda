@@ -715,8 +715,29 @@ void router_gate_weight_backward(
     );
 }
 
-# Step 21 - count_tokens_per_expert_kernel (not yet solved)
-# TODO: implement
+# Step 21 - count_tokens_per_expert_kernel
+__global__ void count_tokens_per_expert_kernel(
+    const int* topk_experts,
+    int* expert_counts,
+    int T,
+    int K,
+    int E
+) {
+    // One thread handles one (token, top-k slot) assignment.
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int total = T * K;
+
+    if (idx >= total) {
+        return;
+    }
+
+    int expert = topk_experts[idx];
+
+    // Guard against invalid expert ids.
+    if (expert >= 0 && expert < E) {
+        atomicAdd(&expert_counts[expert], 1);
+    }
+}
 
 # Step 22 - expert_offsets_prefix_sum_kernel (not yet solved)
 # TODO: implement

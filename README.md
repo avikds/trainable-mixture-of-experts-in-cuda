@@ -30,7 +30,7 @@ python scaffold.py
 - [x] **18.** router_softmax_forward
 - [x] **19.** router_topk_experts
 - [x] **20.** router_gate_weight_backward
-- [ ] **21.** count_tokens_per_expert_kernel
+- [x] **21.** count_tokens_per_expert_kernel
 - [ ] **22.** expert_offsets_prefix_sum_kernel
 - [ ] **23.** assign_token_slots_kernel
 - [ ] **24.** gather_tokens_to_experts_kernel
