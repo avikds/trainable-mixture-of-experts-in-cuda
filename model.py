@@ -334,8 +334,66 @@ __global__ void softmax_rows_forward_kernel(const float* logits, float* probs, i
     }
 }
 
-# Step 13 - softmax_rows_backward_kernel (not yet solved)
-# TODO: implement
+# Step 13 - softmax_rows_backward_kernel
+__global__ void softmax_rows_backward_kernel(
+    const float* probs,
+    const float* dprobs,
+    float* dlogits,
+    int M,
+    int N
+) {
+    // One block processes one row.
+    int row = blockIdx.x;
+    int tid = threadIdx.x;
+
+    if (row >= M) {
+        return;
+    }
+
+    extern __shared__ float shared[];
+
+    const float* row_probs = probs + row * N;
+    const float* row_dprobs = dprobs + row * N;
+    float* row_dlogits = dlogits + row * N;
+
+    // Compute the row-specific scalar:
+    // s = sum_j probs[j] * dprobs[j]
+    float local_sum = 0.0f;
+
+    // Stride across the row so this works even when N > blockDim.x.
+    for (int j = tid; j < N; j += blockDim.x) {
+        local_sum += row_probs[j] * row_dprobs[j];
+    }
+
+    shared[tid] = local_sum;
+    __syncthreads();
+
+    // Reduce the partial sums across the block.
+    int active = blockDim.x;
+
+    while (active > 1) {
+        int half = (active + 1) / 2;
+
+        if (tid < half) {
+            int other = tid + half;
+
+            if (other < active) {
+                shared[tid] += shared[other];
+            }
+        }
+
+        __syncthreads();
+        active = half;
+    }
+
+    float s = shared[0];
+    __syncthreads();
+
+    // dlogits[j] = probs[j] * (dprobs[j] - s)
+    for (int j = tid; j < N; j += blockDim.x) {
+        row_dlogits[j] = row_probs[j] * (row_dprobs[j] - s);
+    }
+}
 
 # Step 14 - topk_per_row_kernel (not yet solved)
 # TODO: implement

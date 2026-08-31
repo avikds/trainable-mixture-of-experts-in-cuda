@@ -22,7 +22,7 @@ python scaffold.py
 - [x] **10.** gelu_forward_kernel
 - [x] **11.** gelu_backward_kernel
 - [x] **12.** softmax_rows_forward_kernel
-- [ ] **13.** softmax_rows_backward_kernel
+- [x] **13.** softmax_rows_backward_kernel
 - [ ] **14.** topk_per_row_kernel
 - [ ] **15.** normalize_topk_gates_kernel
 - [ ] **16.** normalize_topk_gates_backward_kernel
