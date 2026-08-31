@@ -1882,6 +1882,7 @@ void moe_forward(
 
     if (num_tokens > 0 && top_k > 0) {
         int threads = 32;
+
         normalize_topk_gates_kernel<<<
             num_tokens,
             threads,
@@ -1915,13 +1916,11 @@ void moe_forward(
         );
     }
 
-    if (num_experts >= 0) {
-        expert_offsets_prefix_sum_kernel<<<1, 128>>>(
-            d_expert_token_counts,
-            d_expert_offsets,
-            num_experts
-        );
-    }
+    expert_offsets_prefix_sum_kernel<<<1, 128>>>(
+        d_expert_token_counts,
+        d_expert_offsets,
+        num_experts
+    );
 
     if (num_experts > 0) {
         cudaMemset(
@@ -1980,19 +1979,25 @@ void moe_forward(
 
         const float* w_up =
             d_w_up + (size_t)e * in_dim * hidden_dim;
+
         const float* b_up =
             d_b_up + (size_t)e * hidden_dim;
+
         const float* w_down =
             d_w_down + (size_t)e * hidden_dim * out_dim;
+
         const float* b_down =
             d_b_down + (size_t)e * out_dim;
 
         float* x_e =
             d_gathered_input + (size_t)offset * in_dim;
+
         float* hpre_e =
             d_hidden_pre + (size_t)offset * hidden_dim;
+
         float* hpost_e =
             d_hidden_post + (size_t)offset * hidden_dim;
+
         float* y_e =
             d_expert_output + (size_t)offset * out_dim;
 
@@ -2067,158 +2072,347 @@ void moe_forward(
 }
 
 # Step 50 - moe_backward
-__global__ void topk_grad_scatter_kernel(const float* a,const int* idx,float* g,int T,int E,int K){
-    int i=blockIdx.x*blockDim.x+threadIdx.x,n=T*K;
-    if(i>=n)return;
-    int t=i/K,e=idx[i];
-    if(e>=0&&e<E) atomicAdd(&g[t*E+e],a[i]);
+__global__ void topk_grad_scatter_kernel(
+    const float* src,
+    const int* idx,
+    float* dst,
+    int T,
+    int E,
+    int K
+) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int n = T * K;
+
+    if (i >= n) {
+        return;
+    }
+
+    int t = i / K;
+    int e = idx[i];
+
+    if (e >= 0 && e < E) {
+        atomicAdd(&dst[t * E + e], src[i]);
+    }
 }
 
-__global__ void aux_grad_from_counts_kernel(const int* c,float* g,int T,int E,int K,float s){
-    int i=blockIdx.x*blockDim.x+threadIdx.x,n=T*E;
-    if(i>=n||T<=0||K<=0)return;
-    int e=i%E;
-    g[i]+=s*(float)E*(float)c[e]/((float)T*(float)T*(float)K);
+__global__ void aux_grad_from_counts_kernel(
+    const int* counts,
+    float* grad,
+    int T,
+    int E,
+    int K,
+    float aux_scale
+) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int n = T * E;
+
+    if (i >= n || T <= 0 || K <= 0) {
+        return;
+    }
+
+    int e = i % E;
+
+    grad[i] += aux_scale *
+               (float)E *
+               (float)counts[e] /
+               ((float)T * (float)T * (float)K);
 }
 
 void moe_backward(
-const float* d_input,const float* d_w_gate,const float* d_w_up,
-const float* d_b_up,const float* d_w_down,const float* d_b_down,
-const float* d_router_logits,const float* d_router_probs,
-const float* d_topk_values,const int* d_topk_indices,
-const float* d_topk_gates,const int* d_expert_token_counts,
-const int* d_expert_offsets,const int* d_token_slot,
-const int* d_token_source,const float* d_gathered_input,
-const float* d_hidden_pre,const float* d_hidden_post,
-const float* d_expert_output,const float* d_grad_output,
-float* d_grad_expert_output,float* d_grad_gathered_input,
-float* d_grad_hidden_post,float* d_grad_hidden_pre,
-float* d_grad_topk_gates,float* d_grad_topk_values,
-float* d_grad_router_probs,float* d_grad_router_logits,
-float* d_grad_input,float* d_grad_w_gate,float* d_grad_w_up,
-float* d_grad_b_up,float* d_grad_w_down,float* d_grad_b_down,
-int T,int D,int H,int O,int E,int K,float aux_loss_scale){
+    const float* d_input,
+    const float* d_w_gate,
+    const float* d_w_up,
+    const float* d_b_up,
+    const float* d_w_down,
+    const float* d_b_down,
+    const float* d_router_logits,
+    const float* d_router_probs,
+    const float* d_topk_values,
+    const int* d_topk_indices,
+    const float* d_topk_gates,
+    const int* d_expert_token_counts,
+    const int* d_expert_offsets,
+    const int* d_token_slot,
+    const int* d_token_source,
+    const float* d_gathered_input,
+    const float* d_hidden_pre,
+    const float* d_hidden_post,
+    const float* d_expert_output,
+    const float* d_grad_output,
+    float* d_grad_expert_output,
+    float* d_grad_gathered_input,
+    float* d_grad_hidden_post,
+    float* d_grad_hidden_pre,
+    float* d_grad_topk_gates,
+    float* d_grad_topk_values,
+    float* d_grad_router_probs,
+    float* d_grad_router_logits,
+    float* d_grad_input,
+    float* d_grad_w_gate,
+    float* d_grad_w_up,
+    float* d_grad_b_up,
+    float* d_grad_w_down,
+    float* d_grad_b_down,
+    int T,
+    int D,
+    int H,
+    int O,
+    int E,
+    int K,
+    float aux_loss_scale
+) {
+    int S = T * K;
 
-int S=T*K;
+    zero_buffer(d_grad_expert_output, S * O);
+    zero_buffer(d_grad_gathered_input, S * D);
+    zero_buffer(d_grad_hidden_post, S * H);
+    zero_buffer(d_grad_hidden_pre, S * H);
 
-zero_buffer(d_grad_router_probs,T*E);
-zero_buffer(d_grad_router_logits,T*E);
-zero_buffer(d_grad_input,T*D);
-zero_buffer(d_grad_topk_gates,S);
-zero_buffer(d_grad_topk_values,S);
+    zero_buffer(d_grad_topk_gates, S);
+    zero_buffer(d_grad_topk_values, S);
 
-zero_buffer(d_grad_expert_output,S*O);
-zero_buffer(d_grad_gathered_input,S*D);
-zero_buffer(d_grad_hidden_post,S*H);
-zero_buffer(d_grad_hidden_pre,S*H);
+    zero_buffer(d_grad_router_probs, T * E);
+    zero_buffer(d_grad_router_logits, T * E);
+    zero_buffer(d_grad_input, T * D);
 
-zero_buffer(d_grad_w_gate,D*E);
-zero_buffer(d_grad_w_up,E*D*H);
-zero_buffer(d_grad_b_up,E*H);
-zero_buffer(d_grad_w_down,E*H*O);
-zero_buffer(d_grad_b_down,E*O);
+    zero_buffer(d_grad_w_gate, D * E);
+    zero_buffer(d_grad_w_up, E * D * H);
+    zero_buffer(d_grad_b_up, E * H);
+    zero_buffer(d_grad_w_down, E * H * O);
+    zero_buffer(d_grad_b_down, E * O);
 
-if(S>0){
-    combine_backward_to_expert_outputs_kernel<<<S,32>>>(
-        d_grad_output,d_token_source,d_token_slot,d_topk_gates,
-        d_grad_expert_output,S,K,O);
+    if (S > 0) {
+        combine_backward_to_expert_outputs_kernel<<<S, 32>>>(
+            d_grad_output,
+            d_token_source,
+            d_token_slot,
+            d_topk_gates,
+            d_grad_expert_output,
+            S,
+            K,
+            O
+        );
 
-    combine_backward_to_gates_kernel<<<S,64,64*sizeof(float)>>>(
-        d_grad_output,d_expert_output,d_token_source,d_token_slot,
-        d_grad_topk_gates,S,K,O);
-}
+        combine_backward_to_gates_kernel<<<
+            S,
+            64,
+            64 * sizeof(float)
+        >>>(
+            d_grad_output,
+            d_expert_output,
+            d_token_source,
+            d_token_slot,
+            d_grad_topk_gates,
+            S,
+            K,
+            O
+        );
+    }
 
-int* h=new int[E+1];
+    int* h_offsets = new int[E + 1];
 
-if(E>=0){
-    cudaMemcpy(h,d_expert_offsets,
-               (size_t)(E+1)*sizeof(int),
-               cudaMemcpyDeviceToHost);
-}
+    cudaMemcpy(
+        h_offsets,
+        d_expert_offsets,
+        (size_t)(E + 1) * sizeof(int),
+        cudaMemcpyDeviceToHost
+    );
 
-for(int e=0;e<E;e++){
-    int s=h[e];
-    int n=h[e+1]-s;
-    if(n<=0)continue;
+    for (int e = 0; e < E; ++e) {
+        int offset = h_offsets[e];
+        int count = h_offsets[e + 1] - offset;
 
-    const float* wu=d_w_up+(size_t)e*D*H;
-    const float* wd=d_w_down+(size_t)e*H*O;
-    const float* x=d_gathered_input+(size_t)s*D;
-    const float* hp=d_hidden_pre+(size_t)s*H;
-    const float* ho=d_hidden_post+(size_t)s*H;
-    const float* gy=d_grad_expert_output+(size_t)s*O;
+        if (count <= 0) {
+            continue;
+        }
 
-    float* gh=d_grad_hidden_post+(size_t)s*H;
-    float* gp=d_grad_hidden_pre+(size_t)s*H;
-    float* gx=d_grad_gathered_input+(size_t)s*D;
-    float* gwu=d_grad_w_up+(size_t)e*D*H;
-    float* gbu=d_grad_b_up+(size_t)e*H;
-    float* gwd=d_grad_w_down+(size_t)e*H*O;
-    float* gbd=d_grad_b_down+(size_t)e*O;
+        const float* w_up =
+            d_w_up + (size_t)e * D * H;
+        const float* w_down =
+            d_w_down + (size_t)e * H * O;
 
-    expert_down_projection_backward_input(gy,wd,gh,n,H,O);
-    expert_down_projection_backward_weight(ho,gy,gwd,n,H,O);
-    expert_down_projection_backward_bias(gy,gbd,n,O);
+        const float* x_e =
+            d_gathered_input + (size_t)offset * D;
+        const float* hpre_e =
+            d_hidden_pre + (size_t)offset * H;
+        const float* hpost_e =
+            d_hidden_post + (size_t)offset * H;
+        const float* gy_e =
+            d_grad_expert_output + (size_t)offset * O;
 
-    expert_activation_backward(hp,gh,gp,n,H);
+        float* ghpost_e =
+            d_grad_hidden_post + (size_t)offset * H;
+        float* ghpre_e =
+            d_grad_hidden_pre + (size_t)offset * H;
+        float* gx_e =
+            d_grad_gathered_input + (size_t)offset * D;
 
-    expert_up_projection_backward_input(gp,wu,gx,n,D,H);
-    expert_up_projection_backward_weight(x,gp,gwu,n,D,H);
-    expert_up_projection_backward_bias(gp,gbu,n,H);
-}
+        float* gwup_e =
+            d_grad_w_up + (size_t)e * D * H;
+        float* gbup_e =
+            d_grad_b_up + (size_t)e * H;
+        float* gwdn_e =
+            d_grad_w_down + (size_t)e * H * O;
+        float* gbdn_e =
+            d_grad_b_down + (size_t)e * O;
 
-delete[] h;
+        expert_down_projection_backward_input(
+            gy_e,
+            w_down,
+            ghpost_e,
+            count,
+            H,
+            O
+        );
 
-if(T>0&&K>0){
-    normalize_topk_gates_backward_kernel<<<T,64,128*sizeof(float)>>>(
-        d_topk_values,d_topk_gates,
-        d_grad_topk_gates,d_grad_topk_values,
-        T,K);
-}
+        expert_down_projection_backward_weight(
+            hpost_e,
+            gy_e,
+            gwdn_e,
+            count,
+            H,
+            O
+        );
 
-if(S>0&&E>0){
-    int th=256,bl=(S+th-1)/th;
-    topk_grad_scatter_kernel<<<bl,th>>>(
-        d_grad_topk_values,d_topk_indices,
-        d_grad_router_probs,T,E,K);
-}
+        expert_down_projection_backward_bias(
+            gy_e,
+            gbdn_e,
+            count,
+            O
+        );
 
-if(T>0&&E>0&&K>0){
-    int n=T*E,th=256,bl=(n+th-1)/th;
-    aux_grad_from_counts_kernel<<<bl,th>>>(
-        d_expert_token_counts,
-        d_grad_router_probs,
-        T,E,K,
-        aux_loss_scale);
-}
+        expert_activation_backward(
+            hpre_e,
+            ghpost_e,
+            ghpre_e,
+            count,
+            H
+        );
 
-if(T>0&&E>0){
-    softmax_rows_backward_kernel<<<T,256,256*sizeof(float)>>>(
-        d_router_probs,d_grad_router_probs,
-        d_grad_router_logits,T,E);
+        expert_up_projection_backward_input(
+            ghpre_e,
+            w_up,
+            gx_e,
+            count,
+            D,
+            H
+        );
 
-    router_gate_weight_backward(
-        d_input,d_grad_router_logits,
-        d_grad_w_gate,T,D,E);
+        expert_up_projection_backward_weight(
+            x_e,
+            ghpre_e,
+            gwup_e,
+            count,
+            D,
+            H
+        );
 
-    dim3 b(16,16);
-    dim3 g((D+15)/16,(T+15)/16);
+        expert_up_projection_backward_bias(
+            ghpre_e,
+            gbup_e,
+            count,
+            H
+        );
+    }
 
-    matmul_a_bt_kernel<<<g,b>>>(
-        d_grad_router_logits,d_w_gate,
-        d_grad_input,T,D,E);
-}
+    delete[] h_offsets;
 
-if(S>0&&D>0){
-    int n=S*D,th=256,bl=(n+th-1)/th;
+    if (T > 0 && K > 0) {
+        normalize_topk_gates_backward_kernel<<<
+            T,
+            64,
+            2 * 64 * sizeof(float)
+        >>>(
+            d_topk_values,
+            d_topk_gates,
+            d_grad_topk_gates,
+            d_grad_topk_values,
+            T,
+            K
+        );
+    }
 
-    scatter_grads_to_tokens_kernel<<<bl,th>>>(
-        d_grad_gathered_input,
-        d_token_source,
-        d_topk_gates,
-        d_grad_input,
-        S,D);
-}
+    if (S > 0 && E > 0) {
+        int threads = 256;
+        int blocks = (S + threads - 1) / threads;
+
+        topk_grad_scatter_kernel<<<blocks, threads>>>(
+            d_grad_topk_values,
+            d_topk_indices,
+            d_grad_router_probs,
+            T,
+            E,
+            K
+        );
+    }
+
+    if (T > 0 && E > 0 && K > 0) {
+        int n = T * E;
+        int threads = 256;
+        int blocks = (n + threads - 1) / threads;
+
+        aux_grad_from_counts_kernel<<<blocks, threads>>>(
+            d_expert_token_counts,
+            d_grad_router_probs,
+            T,
+            E,
+            K,
+            aux_loss_scale
+        );
+    }
+
+    if (T > 0 && E > 0) {
+        softmax_rows_backward_kernel<<<
+            T,
+            256,
+            256 * sizeof(float)
+        >>>(
+            d_router_probs,
+            d_grad_router_probs,
+            d_grad_router_logits,
+            T,
+            E
+        );
+
+        router_gate_weight_backward(
+            d_input,
+            d_grad_router_logits,
+            d_grad_w_gate,
+            T,
+            D,
+            E
+        );
+
+        dim3 block(16, 16);
+        dim3 grid(
+            (D + 15) / 16,
+            (T + 15) / 16
+        );
+
+        matmul_a_bt_kernel<<<grid, block>>>(
+            d_grad_router_logits,
+            d_w_gate,
+            d_grad_input,
+            T,
+            D,
+            E
+        );
+    }
+
+    if (S > 0 && D > 0) {
+        int n = S * D;
+        int threads = 256;
+        int blocks = (n + threads - 1) / threads;
+
+        scatter_grads_to_tokens_kernel<<<blocks, threads>>>(
+            d_grad_gathered_input,
+            d_token_source,
+            d_topk_gates,
+            d_grad_input,
+            S,
+            D
+        );
+    }
 }
 
 # Step 51 - moe_training_step (not yet solved)
