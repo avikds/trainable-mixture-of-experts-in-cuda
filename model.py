@@ -2155,8 +2155,137 @@ void moe_backward(
     }
 }
 
-# Step 51 - moe_training_step (not yet solved)
-# TODO: implement
+# Step 51 - moe_training_step
+void moe_training_step(MoEContext& ctx, const float* d_input,
+                       const float* d_target, float learning_rate,
+                       float aux_loss_scale, float* h_loss_out) {
+    moe_forward(
+        d_input,ctx.d_w_gate,ctx.d_w_up,ctx.d_b_up,
+        ctx.d_w_down,ctx.d_b_down,
+        ctx.d_router_logits,ctx.d_router_probs,
+        ctx.d_topk_values,ctx.d_topk_indices,ctx.d_topk_gates,
+        ctx.d_expert_token_counts,ctx.d_expert_offsets,
+        ctx.d_token_slot,ctx.d_token_source,
+        ctx.d_gathered_input,ctx.d_hidden_pre,ctx.d_hidden_post,
+        ctx.d_expert_output,ctx.d_output,
+        ctx.num_tokens,ctx.in_dim,ctx.hidden_dim,ctx.out_dim,
+        ctx.num_experts,ctx.top_k
+    );
+
+    float* d_task_loss=nullptr;
+    cudaMalloc(&d_task_loss,sizeof(float));
+
+    mse_loss_forward(
+        ctx.d_output,d_target,d_task_loss,
+        ctx.num_tokens,ctx.out_dim
+    );
+
+    float task_loss=0.0f;
+    cudaMemcpy(
+        &task_loss,d_task_loss,sizeof(float),
+        cudaMemcpyDeviceToHost
+    );
+    cudaFree(d_task_loss);
+
+    float aux_loss=0.0f;
+
+    if(ctx.num_experts>0){
+        float* d_frac=nullptr;
+        float* d_mean=nullptr;
+        float* d_aux=nullptr;
+
+        cudaMalloc(
+            &d_frac,
+            (size_t)ctx.num_experts*sizeof(float)
+        );
+        cudaMalloc(
+            &d_mean,
+            (size_t)ctx.num_experts*sizeof(float)
+        );
+        cudaMalloc(&d_aux,sizeof(float));
+
+        compute_dispatch_fractions(
+            ctx.d_expert_token_counts,
+            d_frac,
+            ctx.num_tokens,
+            ctx.top_k,
+            ctx.num_experts
+        );
+
+        compute_mean_router_probs(
+            ctx.d_router_probs,
+            d_mean,
+            ctx.num_tokens,
+            ctx.num_experts
+        );
+
+        load_balancing_aux_loss_forward(
+            d_frac,d_mean,d_aux,ctx.num_experts
+        );
+
+        cudaMemcpy(
+            &aux_loss,d_aux,sizeof(float),
+            cudaMemcpyDeviceToHost
+        );
+
+        cudaFree(d_frac);
+        cudaFree(d_mean);
+        cudaFree(d_aux);
+    }
+
+    *h_loss_out=task_loss+aux_loss_scale*aux_loss;
+
+    mse_loss_backward(
+        ctx.d_output,d_target,ctx.d_grad_output,
+        ctx.num_tokens,ctx.out_dim
+    );
+
+    moe_backward(
+        d_input,
+        ctx.d_w_gate,ctx.d_w_up,ctx.d_b_up,
+        ctx.d_w_down,ctx.d_b_down,
+        ctx.d_router_logits,ctx.d_router_probs,
+        ctx.d_topk_values,ctx.d_topk_indices,ctx.d_topk_gates,
+        ctx.d_expert_token_counts,ctx.d_expert_offsets,
+        ctx.d_token_slot,ctx.d_token_source,
+        ctx.d_gathered_input,ctx.d_hidden_pre,ctx.d_hidden_post,
+        ctx.d_expert_output,
+        ctx.d_grad_output,
+        ctx.d_grad_expert_output,ctx.d_grad_gathered_input,
+        ctx.d_grad_hidden_post,ctx.d_grad_hidden_pre,
+        ctx.d_grad_topk_gates,ctx.d_grad_topk_values,
+        ctx.d_grad_router_probs,ctx.d_grad_router_logits,
+        ctx.d_grad_input,ctx.d_grad_w_gate,
+        ctx.d_grad_w_up,ctx.d_grad_b_up,
+        ctx.d_grad_w_down,ctx.d_grad_b_down,
+        ctx.num_tokens,ctx.in_dim,ctx.hidden_dim,ctx.out_dim,
+        ctx.num_experts,ctx.top_k,aux_loss_scale
+    );
+
+    sgd_update_parameters(
+        ctx.d_w_gate,ctx.d_grad_w_gate,
+        learning_rate,ctx.in_dim*ctx.num_experts
+    );
+    sgd_update_parameters(
+        ctx.d_w_up,ctx.d_grad_w_up,
+        learning_rate,
+        ctx.num_experts*ctx.in_dim*ctx.hidden_dim
+    );
+    sgd_update_parameters(
+        ctx.d_b_up,ctx.d_grad_b_up,
+        learning_rate,ctx.num_experts*ctx.hidden_dim
+    );
+    sgd_update_parameters(
+        ctx.d_w_down,ctx.d_grad_w_down,
+        learning_rate,
+        ctx.num_experts*ctx.hidden_dim*ctx.out_dim
+    );
+    sgd_update_parameters(
+        ctx.d_b_down,ctx.d_grad_b_down,
+        learning_rate,
+        ctx.num_experts*ctx.out_dim
+    );
+}
 
 # Step 52 - moe_training_loop (not yet solved)
 # TODO: implement

@@ -60,7 +60,7 @@ python scaffold.py
 - [x] **48.** sgd_update_parameters
 - [x] **49.** moe_forward
 - [x] **50.** moe_backward
-- [ ] **51.** moe_training_step
+- [x] **51.** moe_training_step
 - [ ] **52.** moe_training_loop
 
 ---
