@@ -1856,18 +1856,28 @@ void moe_forward(
     int S = num_tokens * top_k;
 
     router_logits_forward(
-        d_input, d_w_gate, d_router_logits,
-        num_tokens, in_dim, num_experts
+        d_input,
+        d_w_gate,
+        d_router_logits,
+        num_tokens,
+        in_dim,
+        num_experts
     );
 
     router_softmax_forward(
-        d_router_logits, d_router_probs,
-        num_tokens, num_experts
+        d_router_logits,
+        d_router_probs,
+        num_tokens,
+        num_experts
     );
 
     router_topk_experts(
-        d_router_probs, d_topk_values, d_topk_indices,
-        num_tokens, num_experts, top_k
+        d_router_probs,
+        d_topk_values,
+        d_topk_indices,
+        num_tokens,
+        num_experts,
+        top_k
     );
 
     if (num_tokens > 0 && top_k > 0) {
@@ -2080,19 +2090,16 @@ __global__ void topk_grad_scatter_kernel(
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     int n = T * K;
 
-    if (i >= n) {
-        return;
-    }
+    if (i >= n) return;
 
     int t = i / K;
     int e = idx[i];
 
-    if (e >= 0 && e < E) {
+    if (e >= 0 && e < E)
         atomicAdd(&dst[t * E + e], src[i]);
-    }
 }
 
-__global__ void aux_grad_from_counts_kernel(
+__global__ void aux_grad_kernel(
     const int* counts,
     float* grad,
     int T,
@@ -2103,16 +2110,16 @@ __global__ void aux_grad_from_counts_kernel(
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     int n = T * E;
 
-    if (i >= n || T <= 0 || K <= 0) {
+    if (i >= n) return;
+
+    if (T <= 0 || K <= 0) {
         return;
     }
 
     int e = i % E;
 
     grad[i] +=
-        scale *
-        (float)E *
-        (float)counts[e] /
+        scale * (float)E * (float)counts[e] /
         ((float)T * (float)T * (float)K);
 }
 
@@ -2159,7 +2166,7 @@ void moe_backward(
     int K,
     float aux_loss_scale
 ) {
-    int S = T * K;
+    const int S = T * K;
 
     zero_buffer(d_grad_expert_output, S * O);
     zero_buffer(d_grad_gathered_input, S * D);
@@ -2192,9 +2199,7 @@ void moe_backward(
         );
 
         combine_backward_to_gates_kernel<<<
-            S,
-            64,
-            64 * sizeof(float)
+            S, 64, 64 * sizeof(float)
         >>>(
             d_grad_output,
             d_expert_output,
@@ -2220,105 +2225,64 @@ void moe_backward(
         int offset = h_offsets[e];
         int count = h_offsets[e + 1] - offset;
 
-        if (count <= 0) {
-            continue;
-        }
+        if (count <= 0) continue;
 
         const float* w_up =
             d_w_up + (size_t)e * D * H;
-
         const float* w_down =
             d_w_down + (size_t)e * H * O;
 
-        const float* x_e =
+        const float* x =
             d_gathered_input + (size_t)offset * D;
-
-        const float* hpre_e =
+        const float* hp =
             d_hidden_pre + (size_t)offset * H;
-
-        const float* hpost_e =
+        const float* hpost =
             d_hidden_post + (size_t)offset * H;
-
-        const float* gy_e =
+        const float* gy =
             d_grad_expert_output + (size_t)offset * O;
 
-        float* ghpost_e =
+        float* ghpost =
             d_grad_hidden_post + (size_t)offset * H;
-
-        float* ghpre_e =
+        float* ghpre =
             d_grad_hidden_pre + (size_t)offset * H;
-
-        float* gx_e =
+        float* gx =
             d_grad_gathered_input + (size_t)offset * D;
 
-        float* gwu_e =
+        float* gwu =
             d_grad_w_up + (size_t)e * D * H;
-
-        float* gbu_e =
+        float* gbu =
             d_grad_b_up + (size_t)e * H;
-
-        float* gwd_e =
+        float* gwd =
             d_grad_w_down + (size_t)e * H * O;
-
-        float* gbd_e =
+        float* gbd =
             d_grad_b_down + (size_t)e * O;
 
         expert_down_projection_backward_input(
-            gy_e,
-            w_down,
-            ghpost_e,
-            count,
-            H,
-            O
+            gy, w_down, ghpost, count, H, O
         );
 
         expert_down_projection_backward_weight(
-            hpost_e,
-            gy_e,
-            gwd_e,
-            count,
-            H,
-            O
+            hpost, gy, gwd, count, H, O
         );
 
         expert_down_projection_backward_bias(
-            gy_e,
-            gbd_e,
-            count,
-            O
+            gy, gbd, count, O
         );
 
         expert_activation_backward(
-            hpre_e,
-            ghpost_e,
-            ghpre_e,
-            count,
-            H
+            hp, ghpost, ghpre, count, H
         );
 
         expert_up_projection_backward_input(
-            ghpre_e,
-            w_up,
-            gx_e,
-            count,
-            D,
-            H
+            ghpre, w_up, gx, count, D, H
         );
 
         expert_up_projection_backward_weight(
-            x_e,
-            ghpre_e,
-            gwu_e,
-            count,
-            D,
-            H
+            x, ghpre, gwu, count, D, H
         );
 
         expert_up_projection_backward_bias(
-            ghpre_e,
-            gbu_e,
-            count,
-            H
+            ghpre, gbu, count, H
         );
     }
 
@@ -2326,9 +2290,7 @@ void moe_backward(
 
     if (T > 0 && K > 0) {
         normalize_topk_gates_backward_kernel<<<
-            T,
-            64,
-            2 * 64 * sizeof(float)
+            T, 64, 2 * 64 * sizeof(float)
         >>>(
             d_topk_values,
             d_topk_gates,
@@ -2358,7 +2320,7 @@ void moe_backward(
         int threads = 256;
         int blocks = (n + threads - 1) / threads;
 
-        aux_grad_from_counts_kernel<<<blocks, threads>>>(
+        aux_grad_kernel<<<blocks, threads>>>(
             d_expert_token_counts,
             d_grad_router_probs,
             T,
@@ -2370,9 +2332,7 @@ void moe_backward(
 
     if (T > 0 && E > 0) {
         softmax_rows_backward_kernel<<<
-            T,
-            256,
-            256 * sizeof(float)
+            T, 256, 256 * sizeof(float)
         >>>(
             d_router_probs,
             d_grad_router_probs,
@@ -2420,6 +2380,8 @@ void moe_backward(
             D
         );
     }
+
+    cudaDeviceSynchronize();
 }
 
 # Step 51 - moe_training_step (not yet solved)
