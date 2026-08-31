@@ -2083,38 +2083,31 @@ __global__ void topk_grad_scatter_kernel(
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     int n = T * K;
 
-    if (i >= n) {
-        return;
-    }
+    if (i >= n) return;
 
     int t = i / K;
     int e = idx[i];
 
-    if (e >= 0 && e < E) {
+    if (e >= 0 && e < E)
         atomicAdd(&dst[t * E + e], src[i]);
-    }
 }
 
-__global__ void aux_grad_from_counts_kernel(
+__global__ void aux_grad_kernel(
     const int* counts,
     float* grad,
     int T,
     int E,
     int K,
-    float aux_scale
+    float scale
 ) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     int n = T * E;
 
-    if (i >= n || T <= 0 || K <= 0) {
-        return;
-    }
+    if (i >= n || T <= 0 || K <= 0) return;
 
     int e = i % E;
 
-    grad[i] += aux_scale *
-               (float)E *
-               (float)counts[e] /
+    grad[i] += scale * (float)E * (float)counts[e] /
                ((float)T * (float)T * (float)K);
 }
 
@@ -2193,11 +2186,7 @@ void moe_backward(
             O
         );
 
-        combine_backward_to_gates_kernel<<<
-            S,
-            64,
-            64 * sizeof(float)
-        >>>(
+        combine_backward_to_gates_kernel<<<S, 64, 64 * sizeof(float)>>>(
             d_grad_output,
             d_expert_output,
             d_token_source,
@@ -2222,38 +2211,46 @@ void moe_backward(
         int offset = h_offsets[e];
         int count = h_offsets[e + 1] - offset;
 
-        if (count <= 0) {
+        if (count <= 0)
             continue;
-        }
 
         const float* w_up =
             d_w_up + (size_t)e * D * H;
+
         const float* w_down =
             d_w_down + (size_t)e * H * O;
 
         const float* x_e =
             d_gathered_input + (size_t)offset * D;
+
         const float* hpre_e =
             d_hidden_pre + (size_t)offset * H;
+
         const float* hpost_e =
             d_hidden_post + (size_t)offset * H;
+
         const float* gy_e =
             d_grad_expert_output + (size_t)offset * O;
 
         float* ghpost_e =
             d_grad_hidden_post + (size_t)offset * H;
+
         float* ghpre_e =
             d_grad_hidden_pre + (size_t)offset * H;
+
         float* gx_e =
             d_grad_gathered_input + (size_t)offset * D;
 
-        float* gwup_e =
+        float* gwu_e =
             d_grad_w_up + (size_t)e * D * H;
-        float* gbup_e =
+
+        float* gbu_e =
             d_grad_b_up + (size_t)e * H;
-        float* gwdn_e =
+
+        float* gwd_e =
             d_grad_w_down + (size_t)e * H * O;
-        float* gbdn_e =
+
+        float* gbd_e =
             d_grad_b_down + (size_t)e * O;
 
         expert_down_projection_backward_input(
@@ -2268,7 +2265,7 @@ void moe_backward(
         expert_down_projection_backward_weight(
             hpost_e,
             gy_e,
-            gwdn_e,
+            gwd_e,
             count,
             H,
             O
@@ -2276,7 +2273,7 @@ void moe_backward(
 
         expert_down_projection_backward_bias(
             gy_e,
-            gbdn_e,
+            gbd_e,
             count,
             O
         );
@@ -2301,7 +2298,7 @@ void moe_backward(
         expert_up_projection_backward_weight(
             x_e,
             ghpre_e,
-            gwup_e,
+            gwu_e,
             count,
             D,
             H
@@ -2309,7 +2306,7 @@ void moe_backward(
 
         expert_up_projection_backward_bias(
             ghpre_e,
-            gbup_e,
+            gbu_e,
             count,
             H
         );
@@ -2351,7 +2348,7 @@ void moe_backward(
         int threads = 256;
         int blocks = (n + threads - 1) / threads;
 
-        aux_grad_from_counts_kernel<<<blocks, threads>>>(
+        aux_grad_kernel<<<blocks, threads>>>(
             d_expert_token_counts,
             d_grad_router_probs,
             T,
