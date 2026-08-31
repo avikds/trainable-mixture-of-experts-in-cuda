@@ -2155,6 +2155,20 @@ void moe_backward(
     }
 }
 
+// end of Step 50
+
+struct MoEContext {
+    float *d_w_gate,*d_w_up,*d_b_up,*d_w_down,*d_b_down;
+    float *d_router_logits,*d_router_probs,*d_topk_values,*d_topk_gates;
+    int *d_topk_indices,*d_expert_token_counts,*d_expert_offsets;
+    int *d_token_slot,*d_token_source;
+    float *d_gathered_input,*d_hidden_pre,*d_hidden_post;
+    float *d_expert_output,*d_output;
+    float *d_grad_w_gate,*d_grad_w_up,*d_grad_b_up;
+    float *d_grad_w_down,*d_grad_b_down;
+    int num_tokens,in_dim,hidden_dim,out_dim,num_experts,top_k;
+};
+
 # Step 51 - moe_training_step
 void moe_training_step(MoEContext& ctx,const float* d_input,
                        const float* d_target,float learning_rate,
