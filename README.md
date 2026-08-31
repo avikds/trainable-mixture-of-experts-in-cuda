@@ -56,7 +56,7 @@ python scaffold.py
 - [x] **44.** load_balancing_aux_loss_backward
 - [x] **45.** mse_loss_forward
 - [x] **46.** mse_loss_backward
-- [ ] **47.** zero_buffer
+- [x] **47.** zero_buffer
 - [ ] **48.** sgd_update_parameters
 - [ ] **49.** moe_forward
 - [ ] **50.** moe_backward

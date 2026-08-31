@@ -1775,8 +1775,18 @@ void mse_loss_backward(
     );
 }
 
-# Step 47 - zero_buffer (not yet solved)
-# TODO: implement
+# Step 47 - zero_buffer
+void zero_buffer(float* d_buf, int num_elements) {
+    if (num_elements <= 0) {
+        return;
+    }
+
+    cudaMemset(
+        d_buf,
+        0,
+        static_cast<size_t>(num_elements) * sizeof(float)
+    );
+}
 
 # Step 48 - sgd_update_parameters (not yet solved)
 # TODO: implement
