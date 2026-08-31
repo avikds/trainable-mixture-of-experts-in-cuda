@@ -2159,12 +2159,8 @@ void moe_backward(
 void moe_training_step(MoEContext& ctx,const float* d_input,
                        const float* d_target,float learning_rate,
                        float aux_loss_scale,float* h_loss_out) {
-    int T=ctx.num_tokens;
-    int D=ctx.in_dim;
-    int H=ctx.hidden_dim;
-    int O=ctx.out_dim;
-    int E=ctx.num_experts;
-    int K=ctx.top_k;
+    int T=ctx.num_tokens,D=ctx.in_dim,H=ctx.hidden_dim;
+    int O=ctx.out_dim,E=ctx.num_experts,K=ctx.top_k,S=T*K;
 
     zero_buffer(ctx.d_grad_w_gate,D*E);
     zero_buffer(ctx.d_grad_w_up,E*D*H);
@@ -2173,30 +2169,22 @@ void moe_training_step(MoEContext& ctx,const float* d_input,
     zero_buffer(ctx.d_grad_b_down,E*O);
 
     moe_forward(
-        d_input,
-        ctx.d_w_gate,ctx.d_w_up,ctx.d_b_up,
+        d_input,ctx.d_w_gate,ctx.d_w_up,ctx.d_b_up,
         ctx.d_w_down,ctx.d_b_down,
         ctx.d_router_logits,ctx.d_router_probs,
         ctx.d_topk_values,ctx.d_topk_indices,ctx.d_topk_gates,
         ctx.d_expert_token_counts,ctx.d_expert_offsets,
         ctx.d_token_slot,ctx.d_token_source,
         ctx.d_gathered_input,ctx.d_hidden_pre,ctx.d_hidden_post,
-        ctx.d_expert_output,ctx.d_output,
-        T,D,H,O,E,K
-    );
+        ctx.d_expert_output,ctx.d_output,T,D,H,O,E,K);
 
     float* d_loss=nullptr;
     cudaMalloc(&d_loss,sizeof(float));
-
-    mse_loss_forward(
-        ctx.d_output,d_target,d_loss,T,O
-    );
+    mse_loss_forward(ctx.d_output,d_target,d_loss,T,O);
 
     float task_loss=0.0f;
-    cudaMemcpy(
-        &task_loss,d_loss,sizeof(float),
-        cudaMemcpyDeviceToHost
-    );
+    cudaMemcpy(&task_loss,d_loss,sizeof(float),
+               cudaMemcpyDeviceToHost);
     cudaFree(d_loss);
 
     float aux_loss=0.0f;
@@ -2204,34 +2192,46 @@ void moe_training_step(MoEContext& ctx,const float* d_input,
     if(E>0){
         compute_dispatch_fractions(
             ctx.d_expert_token_counts,
-            ctx.d_dispatch_fractions,
-            T,K,E
-        );
+            ctx.d_dispatch_fractions,T,K,E);
 
         compute_mean_router_probs(
             ctx.d_router_probs,
-            ctx.d_mean_probs,
-            T,E
-        );
+            ctx.d_mean_probs,T,E);
 
         load_balancing_aux_loss_forward(
             ctx.d_dispatch_fractions,
             ctx.d_mean_probs,
-            ctx.d_aux_loss,
-            E
-        );
+            ctx.d_aux_loss,E);
 
-        cudaMemcpy(
-            &aux_loss,ctx.d_aux_loss,sizeof(float),
-            cudaMemcpyDeviceToHost
-        );
+        cudaMemcpy(&aux_loss,ctx.d_aux_loss,sizeof(float),
+                   cudaMemcpyDeviceToHost);
     }
 
     *h_loss_out=task_loss+aux_loss_scale*aux_loss;
 
-    mse_loss_backward(
-        ctx.d_output,d_target,ctx.d_grad_output,T,O
-    );
+    float* d_go=nullptr;
+    float* d_geo=nullptr;
+    float* d_gg=nullptr;
+    float* d_ghp=nullptr;
+    float* d_ghpre=nullptr;
+    float* d_gtg=nullptr;
+    float* d_gtv=nullptr;
+    float* d_grp=nullptr;
+    float* d_grl=nullptr;
+    float* d_gi=nullptr;
+
+    cudaMalloc(&d_go,(size_t)T*O*sizeof(float));
+    cudaMalloc(&d_geo,(size_t)S*O*sizeof(float));
+    cudaMalloc(&d_gg,(size_t)S*D*sizeof(float));
+    cudaMalloc(&d_ghp,(size_t)S*H*sizeof(float));
+    cudaMalloc(&d_ghpre,(size_t)S*H*sizeof(float));
+    cudaMalloc(&d_gtg,(size_t)S*sizeof(float));
+    cudaMalloc(&d_gtv,(size_t)S*sizeof(float));
+    cudaMalloc(&d_grp,(size_t)T*E*sizeof(float));
+    cudaMalloc(&d_grl,(size_t)T*E*sizeof(float));
+    cudaMalloc(&d_gi,(size_t)T*D*sizeof(float));
+
+    mse_loss_backward(ctx.d_output,d_target,d_go,T,O);
 
     moe_backward(
         d_input,
@@ -2243,48 +2243,33 @@ void moe_training_step(MoEContext& ctx,const float* d_input,
         ctx.d_token_slot,ctx.d_token_source,
         ctx.d_gathered_input,ctx.d_hidden_pre,ctx.d_hidden_post,
         ctx.d_expert_output,
-        ctx.d_grad_output,
-        ctx.d_grad_expert_output,
-        ctx.d_grad_gathered_input,
-        ctx.d_grad_hidden_post,
-        ctx.d_grad_hidden_pre,
-        ctx.d_grad_topk_gates,
-        ctx.d_grad_topk_values,
-        ctx.d_grad_router_probs,
-        ctx.d_grad_router_logits,
-        ctx.d_grad_input,
-        ctx.d_grad_w_gate,
-        ctx.d_grad_w_up,
-        ctx.d_grad_b_up,
-        ctx.d_grad_w_down,
-        ctx.d_grad_b_down,
-        T,D,H,O,E,K,aux_loss_scale
-    );
+        d_go,d_geo,d_gg,d_ghp,d_ghpre,
+        d_gtg,d_gtv,d_grp,d_grl,d_gi,
+        ctx.d_grad_w_gate,ctx.d_grad_w_up,ctx.d_grad_b_up,
+        ctx.d_grad_w_down,ctx.d_grad_b_down,
+        T,D,H,O,E,K,aux_loss_scale);
 
     sgd_update_parameters(
-        ctx.d_w_gate,ctx.d_grad_w_gate,
-        learning_rate,D*E
-    );
-
+        ctx.d_w_gate,ctx.d_grad_w_gate,learning_rate,D*E);
     sgd_update_parameters(
-        ctx.d_w_up,ctx.d_grad_w_up,
-        learning_rate,E*D*H
-    );
-
+        ctx.d_w_up,ctx.d_grad_w_up,learning_rate,E*D*H);
     sgd_update_parameters(
-        ctx.d_b_up,ctx.d_grad_b_up,
-        learning_rate,E*H
-    );
-
+        ctx.d_b_up,ctx.d_grad_b_up,learning_rate,E*H);
     sgd_update_parameters(
-        ctx.d_w_down,ctx.d_grad_w_down,
-        learning_rate,E*H*O
-    );
-
+        ctx.d_w_down,ctx.d_grad_w_down,learning_rate,E*H*O);
     sgd_update_parameters(
-        ctx.d_b_down,ctx.d_grad_b_down,
-        learning_rate,E*O
-    );
+        ctx.d_b_down,ctx.d_grad_b_down,learning_rate,E*O);
+
+    cudaFree(d_go);
+    cudaFree(d_geo);
+    cudaFree(d_gg);
+    cudaFree(d_ghp);
+    cudaFree(d_ghpre);
+    cudaFree(d_gtg);
+    cudaFree(d_gtv);
+    cudaFree(d_grp);
+    cudaFree(d_grl);
+    cudaFree(d_gi);
 }
 
 # Step 52 - moe_training_loop
