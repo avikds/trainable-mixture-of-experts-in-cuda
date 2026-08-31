@@ -1416,8 +1416,45 @@ void expert_up_projection_backward_bias(
     );
 }
 
-# Step 41 - compute_dispatch_fractions (not yet solved)
-# TODO: implement
+# Step 41 - compute_dispatch_fractions
+__global__ void dispatch_fractions_kernel(
+    const int* counts,
+    float* fractions,
+    float denominator,
+    int num_experts
+) {
+    int e = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (e >= num_experts) {
+        return;
+    }
+
+    if (denominator > 0.0f) {
+        fractions[e] = static_cast<float>(counts[e]) / denominator;
+    } else {
+        fractions[e] = 0.0f;
+    }
+}
+
+void compute_dispatch_fractions(
+    const int* d_expert_token_counts,
+    float* d_dispatch_fractions,
+    int num_tokens,
+    int top_k,
+    int num_experts
+) {
+    int total_assignments = num_tokens * top_k;
+
+    int threads = 128;
+    int blocks = (num_experts + threads - 1) / threads;
+
+    dispatch_fractions_kernel<<<blocks, threads>>>(
+        d_expert_token_counts,
+        d_dispatch_fractions,
+        static_cast<float>(total_assignments),
+        num_experts
+    );
+}
 
 # Step 42 - compute_mean_router_probs (not yet solved)
 # TODO: implement
