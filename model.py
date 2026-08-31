@@ -827,8 +827,39 @@ __global__ void gather_tokens_to_experts_kernel(
     X_dispatched[slot * D + d] = X[token * D + d];
 }
 
-# Step 25 - scatter_grads_to_tokens_kernel (not yet solved)
-# TODO: implement
+# Step 25 - scatter_grads_to_tokens_kernel
+__global__ void scatter_grads_to_tokens_kernel(
+    const float* dX_dispatched,
+    const int* slot_token_idx,
+    const float* gate_values,
+    float* dX,
+    int total_slots,
+    int D
+) {
+    // One thread handles one (slot, feature) element.
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int total = total_slots * D;
+
+    if (idx >= total) {
+        return;
+    }
+
+    int slot = idx / D;
+    int d = idx % D;
+
+    // Find the original token associated with this slot.
+    int token = slot_token_idx[slot];
+
+    // Scale the expert gradient by the corresponding gate value.
+    float gate = gate_values[slot];
+
+    // Multiple slots can map to the same token, so atomicAdd is
+    // required to safely accumulate their contributions.
+    atomicAdd(
+        &dX[token * D + d],
+        gate * dX_dispatched[slot * D + d]
+    );
+}
 
 # Step 26 - combine_expert_outputs_kernel (not yet solved)
 # TODO: implement
