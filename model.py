@@ -1117,8 +1117,34 @@ void expert_down_projection_forward(
     );
 }
 
-# Step 33 - expert_down_projection_add_bias (not yet solved)
-# TODO: implement
+# Step 33 - expert_down_projection_add_bias
+void expert_down_projection_add_bias(
+    float* d_output,
+    const float* d_b_down,
+    int num_tokens,
+    int out_dim
+) {
+    // Nothing to do for an empty expert bucket.
+    if (num_tokens == 0) {
+        return;
+    }
+
+    // d_output: num_tokens x out_dim
+    // d_b_down: out_dim
+    // One thread handles one matrix element.
+    dim3 block(16, 16);
+    dim3 grid(
+        (out_dim + 15) / 16,
+        (num_tokens + 15) / 16
+    );
+
+    add_bias_row_kernel<<<grid, block>>>(
+        d_output,
+        d_b_down,
+        num_tokens,
+        out_dim
+    );
+}
 
 # Step 34 - expert_down_projection_backward_input (not yet solved)
 # TODO: implement
