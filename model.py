@@ -165,8 +165,19 @@ __global__ void elementwise_add_kernel(const float* a, const float* b, float* ou
     }
 }
 
-# Step 8 - relu_forward_kernel (not yet solved)
-# TODO: implement
+# Step 8 - relu_forward_kernel
+__global__ void relu_forward_kernel(const float* x, float* y, int n) {
+    // Each thread handles one element.
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+
+    // Guard against out-of-range threads.
+    if (i >= n) {
+        return;
+    }
+
+    // ReLU: y[i] = max(0, x[i]).
+    y[i] = x[i] > 0.0f ? x[i] : 0.0f;
+}
 
 # Step 9 - relu_backward_kernel (not yet solved)
 # TODO: implement
