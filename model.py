@@ -1238,8 +1238,34 @@ void expert_down_projection_backward_weight(
     );
 }
 
-# Step 36 - expert_down_projection_backward_bias (not yet solved)
-# TODO: implement
+# Step 36 - expert_down_projection_backward_bias
+void expert_down_projection_backward_bias(
+    const float* d_grad_output,
+    float* d_grad_b_down,
+    int num_tokens,
+    int out_dim
+) {
+    // For an empty expert bucket, the bias gradient is zero.
+    if (num_tokens == 0) {
+        cudaMemset(
+            d_grad_b_down,
+            0,
+            out_dim * sizeof(float)
+        );
+        return;
+    }
+
+    // One thread handles one output dimension/column.
+    int threads = 128;
+    int blocks = (out_dim + threads - 1) / threads;
+
+    reduce_rows_to_bias_grad_kernel<<<blocks, threads>>>(
+        d_grad_output,
+        d_grad_b_down,
+        num_tokens,
+        out_dim
+    );
+}
 
 # Step 37 - expert_activation_backward (not yet solved)
 # TODO: implement
