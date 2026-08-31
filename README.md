@@ -53,7 +53,7 @@ python scaffold.py
 - [x] **41.** compute_dispatch_fractions
 - [x] **42.** compute_mean_router_probs
 - [x] **43.** load_balancing_aux_loss_forward
-- [ ] **44.** load_balancing_aux_loss_backward
+- [x] **44.** load_balancing_aux_loss_backward
 - [ ] **45.** mse_loss_forward
 - [ ] **46.** mse_loss_backward
 - [ ] **47.** zero_buffer

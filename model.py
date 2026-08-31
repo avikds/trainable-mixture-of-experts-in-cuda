@@ -1573,8 +1573,67 @@ void load_balancing_aux_loss_forward(
     );
 }
 
-# Step 44 - load_balancing_aux_loss_backward (not yet solved)
-# TODO: implement
+# Step 44 - load_balancing_aux_loss_backward
+__global__ void load_balancing_aux_loss_backward_kernel(
+    const float* d_dispatch_fractions,
+    float* d_grad_router_probs,
+    int num_tokens,
+    int num_experts,
+    float aux_loss_scale
+) {
+    // One thread handles one (token, expert) entry.
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int total = num_tokens * num_experts;
+
+    if (idx >= total) {
+        return;
+    }
+
+    int expert = idx % num_experts;
+
+    // For:
+    // L_aux = E * sum_e(f_e * P_e)
+    // P_e = (1 / T) * sum_t router_probs[t, e]
+    //
+    // Therefore:
+    // dL/d(router_probs[t,e]) = E * f_e / T
+    float grad = 0.0f;
+
+    if (num_tokens > 0) {
+        grad = aux_loss_scale
+             * static_cast<float>(num_experts)
+             * d_dispatch_fractions[expert]
+             / static_cast<float>(num_tokens);
+    }
+
+    // Accumulate because this buffer may already contain other gradients.
+    d_grad_router_probs[idx] += grad;
+}
+
+void load_balancing_aux_loss_backward(
+    const float* d_dispatch_fractions,
+    float* d_grad_router_probs,
+    int num_tokens,
+    int num_experts,
+    float aux_loss_scale
+) {
+    int total = num_tokens * num_experts;
+
+    if (total == 0) {
+        return;
+    }
+
+    int threads = 256;
+    int blocks = (total + threads - 1) / threads;
+
+    load_balancing_aux_loss_backward_kernel<<<blocks, threads>>>(
+        d_dispatch_fractions,
+        d_grad_router_probs,
+        num_tokens,
+        num_experts,
+        aux_loss_scale
+    );
+}
 
 # Step 45 - mse_loss_forward (not yet solved)
 # TODO: implement
