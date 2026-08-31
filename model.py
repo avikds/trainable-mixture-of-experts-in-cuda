@@ -1386,8 +1386,35 @@ void expert_up_projection_backward_weight(
     );
 }
 
-# Step 40 - expert_up_projection_backward_bias (not yet solved)
-# TODO: implement
+# Step 40 - expert_up_projection_backward_bias
+void expert_up_projection_backward_bias(
+    const float* d_grad_hidden_pre,
+    float* d_grad_b_up,
+    int num_tokens,
+    int hidden_dim
+) {
+    // For an empty expert bucket, the bias gradient is zero.
+    if (num_tokens == 0) {
+        cudaMemset(
+            d_grad_b_up,
+            0,
+            hidden_dim * sizeof(float)
+        );
+        return;
+    }
+
+    // One thread handles one hidden dimension/column.
+    int threads = 128;
+    int blocks = (hidden_dim + threads - 1) / threads;
+
+    // Sum the gradient across all tokens for each hidden dimension.
+    reduce_rows_to_bias_grad_kernel<<<blocks, threads>>>(
+        d_grad_hidden_pre,
+        d_grad_b_up,
+        num_tokens,
+        hidden_dim
+    );
+}
 
 # Step 41 - compute_dispatch_fractions (not yet solved)
 # TODO: implement
