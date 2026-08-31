@@ -932,8 +932,70 @@ __global__ void combine_backward_to_expert_outputs_kernel(
     }
 }
 
-# Step 28 - combine_backward_to_gates_kernel (not yet solved)
-# TODO: implement
+# Step 28 - combine_backward_to_gates_kernel
+__global__ void combine_backward_to_gates_kernel(
+    const float* dY,
+    const float* Y_dispatched,
+    const int* slot_token_idx,
+    const int* slot_k_idx,
+    float* dgates,
+    int total_slots,
+    int K,
+    int D_out
+) {
+    // One block processes one dispatched slot.
+    int slot = blockIdx.x;
+    int tid = threadIdx.x;
+
+    if (slot >= total_slots) {
+        return;
+    }
+
+    // Dynamic shared memory for the per-thread partial dot products.
+    extern __shared__ float shared[];
+
+    int token = slot_token_idx[slot];
+    int k = slot_k_idx[slot];
+
+    const float* dy_row = dY + token * D_out;
+    const float* y_row = Y_dispatched + slot * D_out;
+
+    // Each thread computes a partial dot product.
+    float local_sum = 0.0f;
+
+    for (int d = tid; d < D_out; d += blockDim.x) {
+        local_sum += dy_row[d] * y_row[d];
+    }
+
+    shared[tid] = local_sum;
+    __syncthreads();
+
+    // Reduce the partial dot products.
+    int active = blockDim.x;
+
+    while (active > 1) {
+        int half = (active + 1) / 2;
+
+        if (tid < half) {
+            int other = tid + half;
+
+            if (other < active) {
+                shared[tid] += shared[other];
+            }
+        }
+
+        __syncthreads();
+        active = half;
+    }
+
+    // One value remains: dot(dY[token, :], Y_dispatched[slot, :]).
+    if (tid == 0) {
+        atomicAdd(
+            &dgates[token * K + k],
+            shared[0]
+        );
+    }
+}
 
 # Step 29 - expert_up_projection_forward (not yet solved)
 # TODO: implement

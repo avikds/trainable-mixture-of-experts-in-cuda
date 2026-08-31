@@ -37,7 +37,7 @@ python scaffold.py
 - [x] **25.** scatter_grads_to_tokens_kernel
 - [x] **26.** combine_expert_outputs_kernel
 - [x] **27.** combine_backward_to_expert_outputs_kernel
-- [ ] **28.** combine_backward_to_gates_kernel
+- [x] **28.** combine_backward_to_gates_kernel
 - [ ] **29.** expert_up_projection_forward
 - [ ] **30.** expert_up_projection_add_bias
 - [ ] **31.** expert_hidden_activation_forward
