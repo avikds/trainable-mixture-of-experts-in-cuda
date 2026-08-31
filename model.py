@@ -213,8 +213,38 @@ __global__ void gelu_forward_kernel(const float* x, float* y, int n) {
     }
 }
 
-# Step 11 - gelu_backward_kernel (not yet solved)
-# TODO: implement
+# Step 11 - gelu_backward_kernel
+__global__ void gelu_backward_kernel(const float* x, const float* dy, float* dx, int n) {
+    // Grid-stride loop so all elements are processed.
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int stride = blockDim.x * gridDim.x;
+
+    constexpr float SQRT_2_OVER_PI = 0.7978845608028654f;
+    constexpr float GELU_COEFF = 0.044715f;
+
+    for (int i = idx; i < n; i += stride) {
+        float value = x[i];
+
+        // u = sqrt(2/pi) * (x + 0.044715 * x^3)
+        float x_squared = value * value;
+        float x_cubed = x_squared * value;
+        float u = SQRT_2_OVER_PI * (value + GELU_COEFF * x_cubed);
+
+        // tanh(u)
+        float tanh_u = tanhf(u);
+
+        // du/dx = sqrt(2/pi) * (1 + 3 * 0.044715 * x^2)
+        float du_dx =
+            SQRT_2_OVER_PI * (1.0f + 3.0f * GELU_COEFF * x_squared);
+
+        // d/dx [0.5 * x * (1 + tanh(u))]
+        float dgelu_dx =
+            0.5f * (1.0f + tanh_u)
+            + 0.5f * value * (1.0f - tanh_u * tanh_u) * du_dx;
+
+        dx[i] = dy[i] * dgelu_dx;
+    }
+}
 
 # Step 12 - softmax_rows_forward_kernel (not yet solved)
 # TODO: implement
