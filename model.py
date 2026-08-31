@@ -1267,8 +1267,32 @@ void expert_down_projection_backward_bias(
     );
 }
 
-# Step 37 - expert_activation_backward (not yet solved)
-# TODO: implement
+# Step 37 - expert_activation_backward
+void expert_activation_backward(
+    const float* d_hidden_pre,
+    const float* d_grad_hidden_post,
+    float* d_grad_hidden_pre,
+    int num_tokens,
+    int hidden_dim
+) {
+    int n = num_tokens * hidden_dim;
+
+    // Nothing to do for an empty expert bucket.
+    if (n == 0) {
+        return;
+    }
+
+    int threads = 256;
+    int blocks = (n + threads - 1) / threads;
+
+    // The expert hidden activation is GELU, so use the GELU backward kernel.
+    gelu_backward_kernel<<<blocks, threads>>>(
+        d_hidden_pre,
+        d_grad_hidden_post,
+        d_grad_hidden_pre,
+        n
+    );
+}
 
 # Step 38 - expert_up_projection_backward_input (not yet solved)
 # TODO: implement
