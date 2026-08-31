@@ -51,7 +51,7 @@ python scaffold.py
 - [x] **39.** expert_up_projection_backward_weight
 - [x] **40.** expert_up_projection_backward_bias
 - [x] **41.** compute_dispatch_fractions
-- [ ] **42.** compute_mean_router_probs
+- [x] **42.** compute_mean_router_probs
 - [ ] **43.** load_balancing_aux_loss_forward
 - [ ] **44.** load_balancing_aux_loss_backward
 - [ ] **45.** mse_loss_forward

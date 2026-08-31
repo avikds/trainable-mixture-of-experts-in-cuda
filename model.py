@@ -1456,8 +1456,52 @@ void compute_dispatch_fractions(
     );
 }
 
-# Step 42 - compute_mean_router_probs (not yet solved)
-# TODO: implement
+# Step 42 - compute_mean_router_probs
+__global__ void mean_router_probs_kernel(
+    const float* router_probs,
+    float* mean_probs,
+    int num_tokens,
+    int num_experts
+) {
+    // One thread handles one expert.
+    int e = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (e >= num_experts) {
+        return;
+    }
+
+    // Handle the empty-token case safely.
+    if (num_tokens == 0) {
+        mean_probs[e] = 0.0f;
+        return;
+    }
+
+    float sum = 0.0f;
+
+    // Sum this expert's probability across all tokens.
+    for (int t = 0; t < num_tokens; ++t) {
+        sum += router_probs[t * num_experts + e];
+    }
+
+    mean_probs[e] = sum / static_cast<float>(num_tokens);
+}
+
+void compute_mean_router_probs(
+    const float* d_router_probs,
+    float* d_mean_probs,
+    int num_tokens,
+    int num_experts
+) {
+    int threads = 128;
+    int blocks = (num_experts + threads - 1) / threads;
+
+    mean_router_probs_kernel<<<blocks, threads>>>(
+        d_router_probs,
+        d_mean_probs,
+        num_tokens,
+        num_experts
+    );
+}
 
 # Step 43 - load_balancing_aux_loss_forward (not yet solved)
 # TODO: implement
