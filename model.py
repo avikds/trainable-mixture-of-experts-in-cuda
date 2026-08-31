@@ -899,8 +899,38 @@ __global__ void combine_expert_outputs_kernel(
     );
 }
 
-# Step 27 - combine_backward_to_expert_outputs_kernel (not yet solved)
-# TODO: implement
+# Step 27 - combine_backward_to_expert_outputs_kernel
+__global__ void combine_backward_to_expert_outputs_kernel(
+    const float* dY,
+    const int* slot_token_idx,
+    const int* slot_k_idx,
+    const float* gates,
+    float* dY_dispatched,
+    int total_slots,
+    int K,
+    int D_out
+) {
+    // One block processes one slot.
+    int slot = blockIdx.x;
+    int tid = threadIdx.x;
+
+    if (slot >= total_slots) {
+        return;
+    }
+
+    // Find the source token and its top-k gate index.
+    int token = slot_token_idx[slot];
+    int k = slot_k_idx[slot];
+
+    // Retrieve the gate associated with this slot.
+    float gate = gates[token * K + k];
+
+    // Threads cooperate over the output features.
+    for (int d = tid; d < D_out; d += blockDim.x) {
+        dY_dispatched[slot * D_out + d] =
+            gate * dY[token * D_out + d];
+    }
+}
 
 # Step 28 - combine_backward_to_gates_kernel (not yet solved)
 # TODO: implement
