@@ -1083,8 +1083,39 @@ void expert_hidden_activation_forward(
     );
 }
 
-# Step 32 - expert_down_projection_forward (not yet solved)
-# TODO: implement
+# Step 32 - expert_down_projection_forward
+void expert_down_projection_forward(
+    const float* d_hidden_post,
+    const float* d_w_down,
+    float* d_output,
+    int num_tokens,
+    int hidden_dim,
+    int out_dim
+) {
+    // Nothing to do for an empty expert bucket.
+    if (num_tokens == 0) {
+        return;
+    }
+
+    // d_hidden_post: num_tokens x hidden_dim
+    // d_w_down     : hidden_dim x out_dim
+    // d_output     : num_tokens x out_dim
+
+    dim3 block(16, 16);
+    dim3 grid(
+        (out_dim + 15) / 16,
+        (num_tokens + 15) / 16
+    );
+
+    matmul_tiled_kernel<<<grid, block>>>(
+        d_hidden_post,
+        d_w_down,
+        d_output,
+        num_tokens,
+        out_dim,
+        hidden_dim
+    );
+}
 
 # Step 33 - expert_down_projection_add_bias (not yet solved)
 # TODO: implement
