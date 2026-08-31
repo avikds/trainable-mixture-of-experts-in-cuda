@@ -458,8 +458,58 @@ __global__ void topk_per_row_kernel(
     }
 }
 
-# Step 15 - normalize_topk_gates_kernel (not yet solved)
-# TODO: implement
+# Step 15 - normalize_topk_gates_kernel
+__global__ void normalize_topk_gates_kernel(
+    const float* topk_values,
+    float* gates,
+    int M,
+    int K
+) {
+    // One block processes one row.
+    int row = blockIdx.x;
+    int tid = threadIdx.x;
+
+    if (row >= M) {
+        return;
+    }
+
+    extern __shared__ float shared[];
+
+    const float* row_values = topk_values + row * K;
+    float* row_gates = gates + row * K;
+
+    // Each thread contributes one or more K entries.
+    float local_sum = 0.0f;
+
+    for (int k = tid; k < K; k += blockDim.x) {
+        local_sum += row_values[k];
+    }
+
+    shared[tid] = local_sum;
+    __syncthreads();
+
+    // Reduce the sum across the block.
+    int active = blockDim.x;
+
+    while (active > 1) {
+        int half = active / 2;
+
+        if (tid < half) {
+            shared[tid] += shared[tid + half];
+        }
+
+        __syncthreads();
+        active = half;
+    }
+
+    float sum = shared[0];
+    __syncthreads();
+
+    // Normalize each selected gate.
+    for (int k = tid; k < K; k += blockDim.x) {
+        row_gates[k] = row_values[k] / sum;
+    }
+}
 
 # Step 16 - normalize_topk_gates_backward_kernel (not yet solved)
 # TODO: implement
