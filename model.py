@@ -1059,8 +1059,29 @@ void expert_up_projection_add_bias(
     );
 }
 
-# Step 31 - expert_hidden_activation_forward (not yet solved)
-# TODO: implement
+# Step 31 - expert_hidden_activation_forward
+void expert_hidden_activation_forward(
+    const float* d_hidden_pre,
+    float* d_hidden_post,
+    int num_tokens,
+    int hidden_dim
+) {
+    int n = num_tokens * hidden_dim;
+
+    // Nothing to do for an empty expert bucket.
+    if (n == 0) {
+        return;
+    }
+
+    int threads = 256;
+    int blocks = (n + threads - 1) / threads;
+
+    gelu_forward_kernel<<<blocks, threads>>>(
+        d_hidden_pre,
+        d_hidden_post,
+        n
+    );
+}
 
 # Step 32 - expert_down_projection_forward (not yet solved)
 # TODO: implement
