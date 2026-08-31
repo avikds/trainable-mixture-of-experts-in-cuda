@@ -18,7 +18,7 @@ python scaffold.py
 - [x] **6.** reduce_rows_to_bias_grad_kernel
 - [x] **7.** elementwise_add_kernel
 - [x] **8.** relu_forward_kernel
-- [ ] **9.** relu_backward_kernel
+- [x] **9.** relu_backward_kernel
 - [ ] **10.** gelu_forward_kernel
 - [ ] **11.** gelu_backward_kernel
 - [ ] **12.** softmax_rows_forward_kernel
