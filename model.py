@@ -1503,8 +1503,75 @@ void compute_mean_router_probs(
     );
 }
 
-# Step 43 - load_balancing_aux_loss_forward (not yet solved)
-# TODO: implement
+# Step 43 - load_balancing_aux_loss_forward
+__global__ void load_balancing_aux_loss_forward_kernel(
+    const float* d_dispatch_fractions,
+    const float* d_mean_probs,
+    float* d_aux_loss,
+    int num_experts
+) {
+    extern __shared__ float shared[];
+
+    int tid = threadIdx.x;
+
+    // Each thread accumulates a partial sum over experts.
+    float local_sum = 0.0f;
+
+    for (int e = tid; e < num_experts; e += blockDim.x) {
+        local_sum += d_dispatch_fractions[e] * d_mean_probs[e];
+    }
+
+    shared[tid] = local_sum;
+    __syncthreads();
+
+    // Reduce partial sums.
+    int active = blockDim.x;
+
+    while (active > 1) {
+        int half = (active + 1) / 2;
+
+        if (tid < half) {
+            int other = tid + half;
+
+            if (other < active) {
+                shared[tid] += shared[other];
+            }
+        }
+
+        __syncthreads();
+        active = half;
+    }
+
+    // Standard MoE load-balancing loss:
+    // aux_loss = num_experts * sum_e(f_e * P_e)
+    if (tid == 0) {
+        d_aux_loss[0] =
+            static_cast<float>(num_experts) * shared[0];
+    }
+}
+
+void load_balancing_aux_loss_forward(
+    const float* d_dispatch_fractions,
+    const float* d_mean_probs,
+    float* d_aux_loss,
+    int num_experts
+) {
+    // Define the output for the degenerate case.
+    if (num_experts <= 0) {
+        cudaMemset(d_aux_loss, 0, sizeof(float));
+        return;
+    }
+
+    int threads = 128;
+    size_t shared_bytes = threads * sizeof(float);
+
+    load_balancing_aux_loss_forward_kernel<<<1, threads, shared_bytes>>>(
+        d_dispatch_fractions,
+        d_mean_probs,
+        d_aux_loss,
+        num_experts
+    );
+}
 
 # Step 44 - load_balancing_aux_loss_backward (not yet solved)
 # TODO: implement
