@@ -1030,8 +1030,34 @@ void expert_up_projection_forward(
     );
 }
 
-# Step 30 - expert_up_projection_add_bias (not yet solved)
-# TODO: implement
+# Step 30 - expert_up_projection_add_bias
+void expert_up_projection_add_bias(
+    float* H_pre,
+    const float* b_up,
+    int N_e,
+    int H
+) {
+    // No work is needed when the expert has no assigned tokens.
+    if (N_e == 0) {
+        return;
+    }
+
+    // H_pre: N_e x H
+    // b_up : H
+    // One thread handles one matrix element.
+    dim3 block(16, 16);
+    dim3 grid(
+        (H + 15) / 16,
+        (N_e + 15) / 16
+    );
+
+    add_bias_row_kernel<<<grid, block>>>(
+        H_pre,
+        b_up,
+        N_e,
+        H
+    );
+}
 
 # Step 31 - expert_hidden_activation_forward (not yet solved)
 # TODO: implement
