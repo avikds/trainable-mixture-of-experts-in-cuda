@@ -2273,26 +2273,16 @@ void moe_training_step(MoEContext& ctx,const float* d_input,
 }
 
 # Step 52 - moe_training_loop
-void moe_training_loop(MoEContext& ctx, const float* d_input, const float* d_target,
-                       float learning_rate, float aux_loss_scale, int num_steps,
+void moe_training_loop(MoEContext& ctx,const float* d_input,
+                       const float* d_target,float learning_rate,
+                       float aux_loss_scale,int num_steps,
                        float* h_loss_history) {
-    if (num_steps <= 0 || h_loss_history == nullptr) {
-        return;
-    }
+    if(num_steps<=0||h_loss_history==nullptr) return;
 
-    for (int step = 0; step < num_steps; ++step) {
-        float loss = 0.0f;
-
+    for(int i=0;i<num_steps;i++)
         moe_training_step(
-            ctx,
-            d_input,
-            d_target,
-            learning_rate,
-            aux_loss_scale,
-            &loss
-        );
-
-        h_loss_history[step] = loss;
-    }
+            ctx,d_input,d_target,
+            learning_rate,aux_loss_scale,
+            &h_loss_history[i]);
 }
 
