@@ -2156,6 +2156,35 @@ void moe_backward(
 }
 
 # Step 51 - moe_training_step
+// Step 51 - moe_training_step
+
+struct MoEContext {
+    float *d_w_gate,*d_w_up,*d_b_up,*d_w_down,*d_b_down;
+    float *d_router_logits,*d_router_probs;
+    float *d_topk_values,*d_topk_gates;
+    int *d_topk_indices;
+    int *d_expert_token_counts,*d_expert_offsets;
+    int *d_token_slot,*d_token_source;
+
+    float *d_gathered_input,*d_hidden_pre,*d_hidden_post;
+    float *d_expert_output,*d_output;
+
+    float *d_grad_w_gate,*d_grad_w_up,*d_grad_b_up;
+    float *d_grad_w_down,*d_grad_b_down;
+
+    float *d_grad_output,*d_grad_expert_output;
+    float *d_grad_gathered_input;
+    float *d_grad_hidden_post,*d_grad_hidden_pre;
+    float *d_grad_topk_gates,*d_grad_topk_values;
+    float *d_grad_router_probs,*d_grad_router_logits;
+    float *d_grad_input;
+
+    float *d_dispatch_fractions,*d_mean_probs,*d_aux_loss;
+
+    int num_tokens,in_dim,hidden_dim,out_dim;
+    int num_experts,top_k;
+};
+
 void moe_training_step(MoEContext& ctx,const float* d_input,
                        const float* d_target,float learning_rate,
                        float aux_loss_scale,float* h_loss_out) {
