@@ -739,8 +739,26 @@ __global__ void count_tokens_per_expert_kernel(
     }
 }
 
-# Step 22 - expert_offsets_prefix_sum_kernel (not yet solved)
-# TODO: implement
+# Step 22 - expert_offsets_prefix_sum_kernel
+__global__ void expert_offsets_prefix_sum_kernel(
+    const int* expert_counts,
+    int* expert_offsets,
+    int E
+) {
+    // A single thread computes the exclusive prefix sum serially.
+    if (threadIdx.x != 0) {
+        return;
+    }
+
+    expert_offsets[0] = 0;
+
+    int running_sum = 0;
+
+    for (int e = 0; e < E; ++e) {
+        running_sum += expert_counts[e];
+        expert_offsets[e + 1] = running_sum;
+    }
+}
 
 # Step 23 - assign_token_slots_kernel (not yet solved)
 # TODO: implement
