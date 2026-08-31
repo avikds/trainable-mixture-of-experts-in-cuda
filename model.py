@@ -395,8 +395,68 @@ __global__ void softmax_rows_backward_kernel(
     }
 }
 
-# Step 14 - topk_per_row_kernel (not yet solved)
-# TODO: implement
+# Step 14 - topk_per_row_kernel
+__global__ void topk_per_row_kernel(
+    const float* values,
+    float* topk_values,
+    int* topk_indices,
+    int M,
+    int N,
+    int K
+) {
+    // One thread processes one complete row.
+    int row = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (row >= M) {
+        return;
+    }
+
+    // K is guaranteed to be <= 4.
+    constexpr int MAX_K = 4;
+
+    float best_values[MAX_K];
+    int best_indices[MAX_K];
+
+    // Initialize the top-K slots.
+    for (int k = 0; k < MAX_K; ++k) {
+        best_values[k] = -1.0e30f;
+        best_indices[k] = -1;
+    }
+
+    const float* row_values = values + row * N;
+
+    // Scan the entire row serially.
+    for (int j = 0; j < N; ++j) {
+        float value = row_values[j];
+
+        // Find the insertion position for this value.
+        int pos = K;
+
+        for (int k = 0; k < K; ++k) {
+            if (value > best_values[k]) {
+                pos = k;
+                break;
+            }
+        }
+
+        // Insert into the sorted top-K list.
+        if (pos < K) {
+            for (int k = K - 1; k > pos; --k) {
+                best_values[k] = best_values[k - 1];
+                best_indices[k] = best_indices[k - 1];
+            }
+
+            best_values[pos] = value;
+            best_indices[pos] = j;
+        }
+    }
+
+    // Write the selected values and indices in descending order.
+    for (int k = 0; k < K; ++k) {
+        topk_values[row * K + k] = best_values[k];
+        topk_indices[row * K + k] = best_indices[k];
+    }
+}
 
 # Step 15 - normalize_topk_gates_kernel (not yet solved)
 # TODO: implement
