@@ -43,7 +43,7 @@ python scaffold.py
 - [x] **31.** expert_hidden_activation_forward
 - [x] **32.** expert_down_projection_forward
 - [x] **33.** expert_down_projection_add_bias
-- [ ] **34.** expert_down_projection_backward_input
+- [x] **34.** expert_down_projection_backward_input
 - [ ] **35.** expert_down_projection_backward_weight
 - [ ] **36.** expert_down_projection_backward_bias
 - [ ] **37.** expert_activation_backward
