@@ -61,7 +61,7 @@ python scaffold.py
 - [x] **49.** moe_forward
 - [x] **50.** moe_backward
 - [x] **51.** moe_training_step
-- [ ] **52.** moe_training_loop
+- [x] **52.** moe_training_loop
 
 ---
 
