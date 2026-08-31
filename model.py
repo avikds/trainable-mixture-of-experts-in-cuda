@@ -511,8 +511,94 @@ __global__ void normalize_topk_gates_kernel(
     }
 }
 
-# Step 16 - normalize_topk_gates_backward_kernel (not yet solved)
-# TODO: implement
+# Step 16 - normalize_topk_gates_backward_kernel
+__global__ void normalize_topk_gates_backward_kernel(
+    const float* topk_values,
+    const float* gates,
+    const float* dgates,
+    float* dtopk_values,
+    int M,
+    int K
+) {
+    // One block processes one token/row.
+    int row = blockIdx.x;
+    int tid = threadIdx.x;
+
+    if (row >= M) {
+        return;
+    }
+
+    // Two shared-memory buffers:
+    // shared[0 .. blockDim.x-1]              -> reduction for sum(v)
+    // shared[blockDim.x .. 2*blockDim.x-1]   -> reduction for sum(dgates * values)
+    extern __shared__ float shared[];
+
+    float* sum_shared = shared;
+    float* dot_shared = shared + blockDim.x;
+
+    const float* row_values = topk_values + row * K;
+    const float* row_gates = gates + row * K;
+    const float* row_dgates = dgates + row * K;
+    float* row_dvalues = dtopk_values + row * K;
+
+    // ------------------------------------------------------------
+    // Forward normalization:
+    //   g_k = v_k / S
+    //   S = sum_j v_j
+    //
+    // Backward:
+    //   dL/dv_k = (dg_k - sum_j(dg_j * g_j)) / S
+    // because g_j = v_j / S.
+    // ------------------------------------------------------------
+
+    float local_sum = 0.0f;
+    float local_dot = 0.0f;
+
+    for (int k = tid; k < K; k += blockDim.x) {
+        local_sum += row_values[k];
+        local_dot += row_dgates[k] * row_gates[k];
+    }
+
+    sum_shared[tid] = local_sum;
+    dot_shared[tid] = local_dot;
+    __syncthreads();
+
+    // ------------------------------------------------------------
+    // Reduce sum(v).
+    // ------------------------------------------------------------
+    int active = blockDim.x;
+
+    while (active > 1) {
+        int half = active / 2;
+
+        if (tid < half) {
+            sum_shared[tid] += sum_shared[tid + half];
+            dot_shared[tid] += dot_shared[tid + half];
+        }
+
+        __syncthreads();
+        active = half;
+    }
+
+    float sum = sum_shared[0];
+    float dot = dot_shared[0];
+
+    __syncthreads();
+
+    // If the raw values sum to zero, gradients are defined as zero
+    // according to the problem statement.
+    if (sum == 0.0f) {
+        for (int k = tid; k < K; k += blockDim.x) {
+            row_dvalues[k] = 0.0f;
+        }
+        return;
+    }
+
+    // Compute gradient with respect to the raw top-K values.
+    for (int k = tid; k < K; k += blockDim.x) {
+        row_dvalues[k] = (row_dgates[k] - dot) / sum;
+    }
+}
 
 # Step 17 - router_logits_forward (not yet solved)
 # TODO: implement
