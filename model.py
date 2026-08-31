@@ -246,8 +246,93 @@ __global__ void gelu_backward_kernel(const float* x, const float* dy, float* dx,
     }
 }
 
-# Step 12 - softmax_rows_forward_kernel (not yet solved)
-# TODO: implement
+# Step 12 - softmax_rows_forward_kernel
+__global__ void softmax_rows_forward_kernel(const float* logits, float* probs, int M, int N) {
+    int row = blockIdx.x;
+    int tid = threadIdx.x;
+
+    if (row >= M) {
+        return;
+    }
+
+    extern __shared__ float shared[];
+
+    const float* row_logits = logits + row * N;
+    float* row_probs = probs + row * N;
+
+    // Find the maximum value in the row.
+    // Initialize from the first element when possible, avoiding
+    // dependencies on FLT_MAX or CUDART_INF_F.
+    float local_max = 0.0f;
+
+    if (N > 0) {
+        local_max = row_logits[0];
+
+        for (int j = tid; j < N; j += blockDim.x) {
+            local_max = fmaxf(local_max, row_logits[j]);
+        }
+    }
+
+    shared[tid] = local_max;
+    __syncthreads();
+
+    // Max reduction.
+    int active = blockDim.x;
+
+    while (active > 1) {
+        int half = (active + 1) / 2;
+
+        if (tid < half) {
+            int other = tid + half;
+
+            if (other < active) {
+                shared[tid] = fmaxf(shared[tid], shared[other]);
+            }
+        }
+
+        __syncthreads();
+        active = half;
+    }
+
+    float row_max = shared[0];
+    __syncthreads();
+
+    // Compute sum of exp(logit - max).
+    float local_sum = 0.0f;
+
+    for (int j = tid; j < N; j += blockDim.x) {
+        local_sum += expf(row_logits[j] - row_max);
+    }
+
+    shared[tid] = local_sum;
+    __syncthreads();
+
+    // Sum reduction.
+    active = blockDim.x;
+
+    while (active > 1) {
+        int half = (active + 1) / 2;
+
+        if (tid < half) {
+            int other = tid + half;
+
+            if (other < active) {
+                shared[tid] += shared[other];
+            }
+        }
+
+        __syncthreads();
+        active = half;
+    }
+
+    float row_sum = shared[0];
+    __syncthreads();
+
+    // Normalize.
+    for (int j = tid; j < N; j += blockDim.x) {
+        row_probs[j] = expf(row_logits[j] - row_max) / row_sum;
+    }
+}
 
 # Step 13 - softmax_rows_backward_kernel (not yet solved)
 # TODO: implement
