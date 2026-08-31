@@ -38,7 +38,7 @@ python scaffold.py
 - [x] **26.** combine_expert_outputs_kernel
 - [x] **27.** combine_backward_to_expert_outputs_kernel
 - [x] **28.** combine_backward_to_gates_kernel
-- [ ] **29.** expert_up_projection_forward
+- [x] **29.** expert_up_projection_forward
 - [ ] **30.** expert_up_projection_add_bias
 - [ ] **31.** expert_hidden_activation_forward
 - [ ] **32.** expert_down_projection_forward

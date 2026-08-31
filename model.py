@@ -997,8 +997,38 @@ __global__ void combine_backward_to_gates_kernel(
     }
 }
 
-# Step 29 - expert_up_projection_forward (not yet solved)
-# TODO: implement
+# Step 29 - expert_up_projection_forward
+void expert_up_projection_forward(
+    const float* X_e,
+    const float* W_up,
+    float* H_pre,
+    int N_e,
+    int D,
+    int H
+) {
+    // No work is needed when the expert has no assigned tokens.
+    if (N_e == 0) {
+        return;
+    }
+
+    // X_e : N_e x D
+    // W_up: D   x H
+    // H_pre: N_e x H
+    dim3 block(16, 16);
+    dim3 grid(
+        (H + 15) / 16,
+        (N_e + 15) / 16
+    );
+
+    matmul_tiled_kernel<<<grid, block>>>(
+        X_e,
+        W_up,
+        H_pre,
+        N_e,
+        H,
+        D
+    );
+}
 
 # Step 30 - expert_up_projection_add_bias (not yet solved)
 # TODO: implement
