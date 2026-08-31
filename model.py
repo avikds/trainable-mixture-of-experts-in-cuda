@@ -1853,40 +1853,26 @@ void moe_forward(
     int num_experts,
     int top_k
 ) {
-    int total_slots = num_tokens * top_k;
+    int S = num_tokens * top_k;
 
     router_logits_forward(
-        d_input,
-        d_w_gate,
-        d_router_logits,
-        num_tokens,
-        in_dim,
-        num_experts
+        d_input, d_w_gate, d_router_logits,
+        num_tokens, in_dim, num_experts
     );
 
     router_softmax_forward(
-        d_router_logits,
-        d_router_probs,
-        num_tokens,
-        num_experts
+        d_router_logits, d_router_probs,
+        num_tokens, num_experts
     );
 
     router_topk_experts(
-        d_router_probs,
-        d_topk_values,
-        d_topk_indices,
-        num_tokens,
-        num_experts,
-        top_k
+        d_router_probs, d_topk_values, d_topk_indices,
+        num_tokens, num_experts, top_k
     );
 
     if (num_tokens > 0 && top_k > 0) {
-        int threads = 32;
-
         normalize_topk_gates_kernel<<<
-            num_tokens,
-            threads,
-            threads * sizeof(float)
+            num_tokens, 32, 32 * sizeof(float)
         >>>(
             d_topk_values,
             d_topk_gates,
@@ -1903,9 +1889,9 @@ void moe_forward(
         );
     }
 
-    if (total_slots > 0) {
+    if (S > 0) {
         int threads = 128;
-        int blocks = (total_slots + threads - 1) / threads;
+        int blocks = (S + threads - 1) / threads;
 
         count_tokens_per_expert_kernel<<<blocks, threads>>>(
             d_topk_indices,
@@ -1922,40 +1908,51 @@ void moe_forward(
         num_experts
     );
 
+    int* d_expert_fill = nullptr;
+
     if (num_experts > 0) {
+        cudaMalloc(
+            &d_expert_fill,
+            (size_t)num_experts * sizeof(int)
+        );
+
         cudaMemset(
-            d_expert_token_counts,
+            d_expert_fill,
             0,
             (size_t)num_experts * sizeof(int)
         );
     }
 
-    if (total_slots > 0) {
+    if (S > 0) {
         int threads = 128;
-        int blocks = (total_slots + threads - 1) / threads;
+        int blocks = (S + threads - 1) / threads;
 
         assign_token_slots_kernel<<<blocks, threads>>>(
             d_topk_indices,
             d_expert_offsets,
             d_token_source,
             d_token_slot,
-            d_expert_token_counts,
+            d_expert_fill,
             num_tokens,
             top_k,
             num_experts
         );
     }
 
-    if (total_slots > 0 && in_dim > 0) {
-        int total = total_slots * in_dim;
+    if (d_expert_fill != nullptr) {
+        cudaFree(d_expert_fill);
+    }
+
+    if (S > 0 && in_dim > 0) {
+        int n = S * in_dim;
         int threads = 128;
-        int blocks = (total + threads - 1) / threads;
+        int blocks = (n + threads - 1) / threads;
 
         gather_tokens_to_experts_kernel<<<blocks, threads>>>(
             d_input,
             d_token_source,
             d_gathered_input,
-            total_slots,
+            S,
             in_dim
         );
     }
@@ -2051,10 +2048,10 @@ void moe_forward(
         );
     }
 
-    if (total_slots > 0 && out_dim > 0) {
+    if (S > 0 && out_dim > 0) {
         dim3 block(16, 16);
         dim3 grid(
-            (total_slots + 15) / 16,
+            (S + 15) / 16,
             (out_dim + 15) / 16
         );
 
@@ -2064,7 +2061,7 @@ void moe_forward(
             d_token_slot,
             d_topk_gates,
             d_output,
-            total_slots,
+            S,
             top_k,
             out_dim
         );
@@ -2083,16 +2080,19 @@ __global__ void topk_grad_scatter_kernel(
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     int n = T * K;
 
-    if (i >= n) return;
+    if (i >= n) {
+        return;
+    }
 
     int t = i / K;
     int e = idx[i];
 
-    if (e >= 0 && e < E)
+    if (e >= 0 && e < E) {
         atomicAdd(&dst[t * E + e], src[i]);
+    }
 }
 
-__global__ void aux_grad_kernel(
+__global__ void aux_grad_from_counts_kernel(
     const int* counts,
     float* grad,
     int T,
@@ -2103,12 +2103,17 @@ __global__ void aux_grad_kernel(
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     int n = T * E;
 
-    if (i >= n || T <= 0 || K <= 0) return;
+    if (i >= n || T <= 0 || K <= 0) {
+        return;
+    }
 
     int e = i % E;
 
-    grad[i] += scale * (float)E * (float)counts[e] /
-               ((float)T * (float)T * (float)K);
+    grad[i] +=
+        scale *
+        (float)E *
+        (float)counts[e] /
+        ((float)T * (float)T * (float)K);
 }
 
 void moe_backward(
@@ -2186,7 +2191,11 @@ void moe_backward(
             O
         );
 
-        combine_backward_to_gates_kernel<<<S, 64, 64 * sizeof(float)>>>(
+        combine_backward_to_gates_kernel<<<
+            S,
+            64,
+            64 * sizeof(float)
+        >>>(
             d_grad_output,
             d_expert_output,
             d_token_source,
@@ -2211,8 +2220,9 @@ void moe_backward(
         int offset = h_offsets[e];
         int count = h_offsets[e + 1] - offset;
 
-        if (count <= 0)
+        if (count <= 0) {
             continue;
+        }
 
         const float* w_up =
             d_w_up + (size_t)e * D * H;
@@ -2348,7 +2358,7 @@ void moe_backward(
         int threads = 256;
         int blocks = (n + threads - 1) / threads;
 
-        aux_grad_kernel<<<blocks, threads>>>(
+        aux_grad_from_counts_kernel<<<blocks, threads>>>(
             d_expert_token_counts,
             d_grad_router_probs,
             T,
