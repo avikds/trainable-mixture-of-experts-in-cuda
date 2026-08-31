@@ -119,8 +119,20 @@ __global__ void matmul_a_bt_kernel(const float* A, const float* B, float* C, int
     C[i * N + j] = sum;
 }
 
-# Step 5 - add_bias_row_kernel (not yet solved)
-# TODO: implement
+# Step 5 - add_bias_row_kernel
+__global__ void add_bias_row_kernel(float* Y, const float* bias, int M, int N) {
+    // Map each thread to one element Y[i, j].
+    int i = blockIdx.y * blockDim.y + threadIdx.y;
+    int j = blockIdx.x * blockDim.x + threadIdx.x;
+
+    // Guard against threads outside the matrix.
+    if (i >= M || j >= N) {
+        return;
+    }
+
+    // Add the corresponding bias value to this column.
+    Y[i * N + j] += bias[j];
+}
 
 # Step 6 - reduce_rows_to_bias_grad_kernel (not yet solved)
 # TODO: implement
