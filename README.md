@@ -47,7 +47,7 @@ python scaffold.py
 - [x] **35.** expert_down_projection_backward_weight
 - [x] **36.** expert_down_projection_backward_bias
 - [x] **37.** expert_activation_backward
-- [ ] **38.** expert_up_projection_backward_input
+- [x] **38.** expert_up_projection_backward_input
 - [ ] **39.** expert_up_projection_backward_weight
 - [ ] **40.** expert_up_projection_backward_bias
 - [ ] **41.** compute_dispatch_fractions
