@@ -193,8 +193,25 @@ __global__ void relu_backward_kernel(const float* x, const float* dy, float* dx,
     dx[i] = (x[i] > 0.0f) ? dy[i] : 0.0f;
 }
 
-# Step 10 - gelu_forward_kernel (not yet solved)
-# TODO: implement
+# Step 10 - gelu_forward_kernel
+__global__ void gelu_forward_kernel(const float* x, float* y, int n) {
+    // Use a grid-stride loop so each thread can process one or more elements.
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int stride = blockDim.x * gridDim.x;
+
+    constexpr float SQRT_2_OVER_PI = 0.7978845608028654f;
+    constexpr float GELU_COEFF = 0.044715f;
+
+    for (int i = idx; i < n; i += stride) {
+        float value = x[i];
+        float value_cubed = value * value * value;
+
+        float inner =
+            SQRT_2_OVER_PI * (value + GELU_COEFF * value_cubed);
+
+        y[i] = 0.5f * value * (1.0f + tanhf(inner));
+    }
+}
 
 # Step 11 - gelu_backward_kernel (not yet solved)
 # TODO: implement
