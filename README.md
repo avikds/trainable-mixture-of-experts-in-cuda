@@ -63,6 +63,23 @@ python scaffold.py
 - [x] **51.** moe_training_step
 - [x] **52.** moe_training_loop
 
----
+## Results
 
-Built on Deep-ML.
+```
+Initial output[0]: 0.0005 -0.0000 -0.0005 -0.0014 
+Target[0]:        0.2253 -0.4079 0.2751 0.0486 
+
+Loss history:
+  step  0  loss=0.378676
+  step  1  loss=0.377430
+  step  2  loss=0.376198
+  step  3  loss=0.374978
+  step  4  loss=0.373772
+  step  5  loss=0.372578
+  step  6  loss=0.371396
+  step  7  loss=0.370226
+  step  8  loss=0.369069
+  step  9  loss=0.367923
+
+Final output[0]: -0.0203 0.0207 0.0145 0.0129
+```
