@@ -630,8 +630,29 @@ void router_logits_forward(
     );
 }
 
-# Step 18 - router_softmax_forward (not yet solved)
-# TODO: implement
+# Step 18 - router_softmax_forward
+void router_softmax_forward(
+    const float* logits,
+    float* probs,
+    int T,
+    int E
+) {
+    // One block processes one token/row.
+    // 128 threads provide enough parallelism while allowing
+    // blockDim.x-strided access when E > 128.
+    int threads = 128;
+
+    // The softmax kernel uses one float of dynamic shared memory
+    // per thread for its row reductions.
+    size_t shared_bytes = threads * sizeof(float);
+
+    softmax_rows_forward_kernel<<<T, threads, shared_bytes>>>(
+        logits,
+        probs,
+        T,
+        E
+    );
+}
 
 # Step 19 - router_topk_experts (not yet solved)
 # TODO: implement

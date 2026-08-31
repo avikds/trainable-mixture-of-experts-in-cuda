@@ -27,7 +27,7 @@ python scaffold.py
 - [x] **15.** normalize_topk_gates_kernel
 - [x] **16.** normalize_topk_gates_backward_kernel
 - [x] **17.** router_logits_forward
-- [ ] **18.** router_softmax_forward
+- [x] **18.** router_softmax_forward
 - [ ] **19.** router_topk_experts
 - [ ] **20.** router_gate_weight_backward
 - [ ] **21.** count_tokens_per_expert_kernel
