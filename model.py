@@ -1788,8 +1788,41 @@ void zero_buffer(float* d_buf, int num_elements) {
     );
 }
 
-# Step 48 - sgd_update_parameters (not yet solved)
-# TODO: implement
+# Step 48 - sgd_update_parameters
+__global__ void sgd_update_parameters_kernel(
+    float* d_param,
+    const float* d_grad,
+    float learning_rate,
+    int num_elements
+) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int stride = blockDim.x * gridDim.x;
+
+    for (int i = idx; i < num_elements; i += stride) {
+        d_param[i] -= learning_rate * d_grad[i];
+    }
+}
+
+void sgd_update_parameters(
+    float* d_param,
+    const float* d_grad,
+    float learning_rate,
+    int num_elements
+) {
+    if (num_elements <= 0) {
+        return;
+    }
+
+    int threads = 256;
+    int blocks = (num_elements + threads - 1) / threads;
+
+    sgd_update_parameters_kernel<<<blocks, threads>>>(
+        d_param,
+        d_grad,
+        learning_rate,
+        num_elements
+    );
+}
 
 # Step 49 - moe_forward (not yet solved)
 # TODO: implement
