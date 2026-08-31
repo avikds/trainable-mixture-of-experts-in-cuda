@@ -1635,8 +1635,104 @@ void load_balancing_aux_loss_backward(
     );
 }
 
-# Step 45 - mse_loss_forward (not yet solved)
-# TODO: implement
+# Step 45 - mse_loss_forward
+__global__ void mse_loss_forward_kernel(
+    const float* d_pred,
+    const float* d_target,
+    float* d_loss,
+    int total
+) {
+    extern __shared__ float shared[];
+
+    int tid = threadIdx.x;
+    int idx = blockIdx.x * blockDim.x + tid;
+    int stride = blockDim.x * gridDim.x;
+
+    float local_sum = 0.0f;
+
+    // Compute a partial sum of squared errors.
+    for (int i = idx; i < total; i += stride) {
+        float diff = d_pred[i] - d_target[i];
+        local_sum += diff * diff;
+    }
+
+    shared[tid] = local_sum;
+    __syncthreads();
+
+    // Reduce within the block.
+    int active = blockDim.x;
+
+    while (active > 1) {
+        int half = (active + 1) / 2;
+
+        if (tid < half) {
+            int other = tid + half;
+
+            if (other < active) {
+                shared[tid] += shared[other];
+            }
+        }
+
+        __syncthreads();
+        active = half;
+    }
+
+    // Accumulate block sums into the scalar.
+    if (tid == 0) {
+        atomicAdd(d_loss, shared[0]);
+    }
+}
+
+__global__ void mse_loss_mean_kernel(
+    float* d_loss,
+    int total
+) {
+    if (blockIdx.x == 0 && threadIdx.x == 0) {
+        if (total > 0) {
+            d_loss[0] /= static_cast<float>(total);
+        } else {
+            d_loss[0] = 0.0f;
+        }
+    }
+}
+
+void mse_loss_forward(
+    const float* d_pred,
+    const float* d_target,
+    float* d_loss,
+    int num_tokens,
+    int out_dim
+) {
+    int total = num_tokens * out_dim;
+
+    // Empty input: return zero loss.
+    if (total == 0) {
+        cudaMemset(d_loss, 0, sizeof(float));
+        return;
+    }
+
+    // Reset the scalar before atomic accumulation.
+    cudaMemset(d_loss, 0, sizeof(float));
+
+    int threads = 256;
+    int blocks = (total + threads - 1) / threads;
+
+    size_t shared_bytes = threads * sizeof(float);
+
+    // First compute the sum of squared errors.
+    mse_loss_forward_kernel<<<blocks, threads, shared_bytes>>>(
+        d_pred,
+        d_target,
+        d_loss,
+        total
+    );
+
+    // Then divide by the total number of elements.
+    mse_loss_mean_kernel<<<1, 1>>>(
+        d_loss,
+        total
+    );
+}
 
 # Step 46 - mse_loss_backward (not yet solved)
 # TODO: implement

@@ -54,7 +54,7 @@ python scaffold.py
 - [x] **42.** compute_mean_router_probs
 - [x] **43.** load_balancing_aux_loss_forward
 - [x] **44.** load_balancing_aux_loss_backward
-- [ ] **45.** mse_loss_forward
+- [x] **45.** mse_loss_forward
 - [ ] **46.** mse_loss_backward
 - [ ] **47.** zero_buffer
 - [ ] **48.** sgd_update_parameters
