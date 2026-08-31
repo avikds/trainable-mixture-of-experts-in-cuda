@@ -654,8 +654,28 @@ void router_softmax_forward(
     );
 }
 
-# Step 19 - router_topk_experts (not yet solved)
-# TODO: implement
+# Step 19 - router_topk_experts
+void router_topk_experts(
+    const float* probs,
+    float* topk_probs,
+    int* topk_experts,
+    int T,
+    int E,
+    int K
+) {
+    // One thread processes one token/row.
+    int threads = 64;
+    int blocks = (T + threads - 1) / threads;
+
+    topk_per_row_kernel<<<blocks, threads>>>(
+        probs,
+        topk_probs,
+        topk_experts,
+        T,
+        E,
+        K
+    );
+}
 
 # Step 20 - router_gate_weight_backward (not yet solved)
 # TODO: implement
