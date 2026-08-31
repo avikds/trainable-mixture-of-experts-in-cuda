@@ -2277,14 +2277,12 @@ void moe_training_loop(MoEContext& ctx,const float* d_input,
                        const float* d_target,float learning_rate,
                        float aux_loss_scale,int num_steps,
                        float* h_loss_history) {
-    if(num_steps<=0 || h_loss_history==nullptr) return;
+    if(num_steps<=0||h_loss_history==nullptr) return;
 
-    for(int i=0;i<num_steps;i++) {
+    for(int i=0;i<num_steps;i++)
         moe_training_step(
             ctx,d_input,d_target,
             learning_rate,aux_loss_scale,
-            &h_loss_history[i]
-        );
-    }
+            &h_loss_history[i]);
 }
 
