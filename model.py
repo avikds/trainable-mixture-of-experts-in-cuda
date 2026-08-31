@@ -27,8 +27,54 @@ __global__ void matmul_naive_kernel(const float* A, const float* B, float* C, in
     C[row * N + col] = sum;
 }
 
-# Step 2 - matmul_tiled_kernel (not yet solved)
-# TODO: implement
+# Step 2 - matmul_tiled_kernel
+__global__ void matmul_tiled_kernel(const float* A, const float* B, float* C, int M, int N, int K) {
+    // Shared-memory tiles for A and B.
+    __shared__ float tileA[16][16];
+    __shared__ float tileB[16][16];
+
+    // Global row and column for the output element computed by this thread.
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+
+    float sum = 0.0f;
+
+    // Process the K dimension one tile at a time.
+    for (int tile = 0; tile < (K + 15) / 16; ++tile) {
+        int aCol = tile * 16 + threadIdx.x;
+        int bRow = tile * 16 + threadIdx.y;
+
+        // Cooperatively load A and B into shared memory.
+        if (row < M && aCol < K) {
+            tileA[threadIdx.y][threadIdx.x] = A[row * K + aCol];
+        } else {
+            tileA[threadIdx.y][threadIdx.x] = 0.0f;
+        }
+
+        if (bRow < K && col < N) {
+            tileB[threadIdx.y][threadIdx.x] = B[bRow * N + col];
+        } else {
+            tileB[threadIdx.y][threadIdx.x] = 0.0f;
+        }
+
+        // Make sure the entire tile has been loaded before using it.
+        __syncthreads();
+
+        // Compute the partial dot product for this tile.
+        for (int k = 0; k < 16; ++k) {
+            sum += tileA[threadIdx.y][k] * tileB[k][threadIdx.x];
+        }
+
+        // Make sure all threads have finished using the current tiles
+        // before the shared memory is overwritten in the next iteration.
+        __syncthreads();
+    }
+
+    // Write the result, guarding edge threads for non-multiple dimensions.
+    if (row < M && col < N) {
+        C[row * N + col] = sum;
+    }
+}
 
 # Step 3 - matmul_at_b_kernel (not yet solved)
 # TODO: implement

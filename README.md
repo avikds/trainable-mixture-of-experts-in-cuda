@@ -11,7 +11,7 @@ python scaffold.py
 ## Steps
 
 - [x] **1.** matmul_naive_kernel
-- [ ] **2.** matmul_tiled_kernel
+- [x] **2.** matmul_tiled_kernel
 - [ ] **3.** matmul_at_b_kernel
 - [ ] **4.** matmul_a_bt_kernel
 - [ ] **5.** add_bias_row_kernel
