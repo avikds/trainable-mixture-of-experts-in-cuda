@@ -2156,7 +2156,8 @@ void moe_backward(
 }
 
 # Step 51 - moe_training_step
-void moe_training_step(MoEContext& ctx,const float* d_input,
+template <typename Context>
+void moe_training_step(Context ctx,const float* d_input,
                        const float* d_target,float learning_rate,
                        float aux_loss_scale,float* h_loss_out) {
     int T=ctx.num_tokens,D=ctx.in_dim,H=ctx.hidden_dim;
