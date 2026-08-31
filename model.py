@@ -98,8 +98,26 @@ __global__ void matmul_at_b_kernel(const float* A, const float* B, float* C, int
     C[m * N + n] = sum;
 }
 
-# Step 4 - matmul_a_bt_kernel (not yet solved)
-# TODO: implement
+# Step 4 - matmul_a_bt_kernel
+__global__ void matmul_a_bt_kernel(const float* A, const float* B, float* C, int M, int N, int K) {
+    // Each thread computes one element C[i, j].
+    int i = blockIdx.y * blockDim.y + threadIdx.y;
+    int j = blockIdx.x * blockDim.x + threadIdx.x;
+
+    // Guard against threads outside the output matrix.
+    if (i >= M || j >= N) {
+        return;
+    }
+
+    float sum = 0.0f;
+
+    // B is stored as N x K, so B^T[k, j] = B[j, k].
+    for (int k = 0; k < K; ++k) {
+        sum += A[i * K + k] * B[j * K + k];
+    }
+
+    C[i * N + j] = sum;
+}
 
 # Step 5 - add_bias_row_kernel (not yet solved)
 # TODO: implement
