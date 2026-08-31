@@ -1734,8 +1734,46 @@ void mse_loss_forward(
     );
 }
 
-# Step 46 - mse_loss_backward (not yet solved)
-# TODO: implement
+# Step 46 - mse_loss_backward
+__global__ void mse_loss_backward_kernel(
+    const float* d_pred,
+    const float* d_target,
+    float* d_grad_pred,
+    int total
+) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int stride = blockDim.x * gridDim.x;
+
+    for (int i = idx; i < total; i += stride) {
+        d_grad_pred[i] =
+            2.0f * (d_pred[i] - d_target[i]) /
+            static_cast<float>(total);
+    }
+}
+
+void mse_loss_backward(
+    const float* d_pred,
+    const float* d_target,
+    float* d_grad_pred,
+    int num_tokens,
+    int out_dim
+) {
+    int total = num_tokens * out_dim;
+
+    if (total == 0) {
+        return;
+    }
+
+    int threads = 256;
+    int blocks = (total + threads - 1) / threads;
+
+    mse_loss_backward_kernel<<<blocks, threads>>>(
+        d_pred,
+        d_target,
+        d_grad_pred,
+        total
+    );
+}
 
 # Step 47 - zero_buffer (not yet solved)
 # TODO: implement
