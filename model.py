@@ -1825,564 +1825,349 @@ void sgd_update_parameters(
 }
 
 # Step 49 - moe_forward
-void moe_forward(const float* d_input, const float* d_w_gate, const float* d_w_up,
-                 const float* d_b_up, const float* d_w_down, const float* d_b_down,
-                 float* d_router_logits, float* d_router_probs,
-                 float* d_topk_values, int* d_topk_indices, float* d_topk_gates,
-                 int* d_expert_token_counts, int* d_expert_offsets,
-                 int* d_token_slot, int* d_token_source,
-                 float* d_gathered_input, float* d_hidden_pre, float* d_hidden_post,
-                 float* d_expert_output, float* d_output,
-                 int num_tokens, int in_dim, int hidden_dim, int out_dim,
-                 int num_experts, int top_k) {
+void moe_forward(const float* d_input,const float* d_w_gate,const float* d_w_up,
+                 const float* d_b_up,const float* d_w_down,const float* d_b_down,
+                 float* d_router_logits,float* d_router_probs,
+                 float* d_topk_values,int* d_topk_indices,float* d_topk_gates,
+                 int* d_expert_token_counts,int* d_expert_offsets,
+                 int* d_token_slot,int* d_token_source,
+                 float* d_gathered_input,float* d_hidden_pre,float* d_hidden_post,
+                 float* d_expert_output,float* d_output,
+                 int num_tokens,int in_dim,int hidden_dim,int out_dim,
+                 int num_experts,int top_k) {
+    int S=num_tokens*top_k;
 
-    int total_slots = num_tokens * top_k;
-
-    // 1. Router logits: X @ Wg
     router_logits_forward(
-        d_input,
-        d_w_gate,
-        d_router_logits,
-        num_tokens,
-        in_dim,
-        num_experts
-    );
+        d_input,d_w_gate,d_router_logits,
+        num_tokens,in_dim,num_experts);
 
-    // 2. Router softmax
     router_softmax_forward(
-        d_router_logits,
-        d_router_probs,
-        num_tokens,
-        num_experts
-    );
+        d_router_logits,d_router_probs,
+        num_tokens,num_experts);
 
-    // 3. Top-k experts per token
     router_topk_experts(
-        d_router_probs,
-        d_topk_values,
-        d_topk_indices,
-        num_tokens,
-        num_experts,
-        top_k
-    );
+        d_router_probs,d_topk_values,d_topk_indices,
+        num_tokens,num_experts,top_k);
 
-    // 4. Normalize selected gate values
-    if (num_tokens > 0 && top_k > 0) {
-        int threads = 32;
+    if(num_tokens>0&&top_k>0)
+        normalize_topk_gates_kernel<<<num_tokens,32,32*sizeof(float)>>>(
+            d_topk_values,d_topk_gates,num_tokens,top_k);
 
-        normalize_topk_gates_kernel<<<
-            num_tokens,
-            threads,
-            threads * sizeof(float)
-        >>>(
-            d_topk_values,
-            d_topk_gates,
-            num_tokens,
-            top_k
-        );
+    if(num_experts>0)
+        cudaMemset(d_expert_token_counts,0,
+                   (size_t)num_experts*sizeof(int));
+
+    if(S>0){
+        int th=128,bl=(S+th-1)/th;
+        count_tokens_per_expert_kernel<<<bl,th>>>(
+            d_topk_indices,d_expert_token_counts,
+            num_tokens,top_k,num_experts);
     }
 
-    // 5. Count token/expert assignments
-    if (num_experts > 0) {
-        cudaMemset(
+    int* d_tmp_offsets=nullptr;
+    if(num_experts>=0){
+        cudaMalloc(&d_tmp_offsets,
+                   (size_t)(num_experts+1)*sizeof(int));
+
+        expert_offsets_prefix_sum_kernel<<<1,128>>>(
             d_expert_token_counts,
-            0,
-            (size_t)num_experts * sizeof(int)
-        );
+            d_tmp_offsets,
+            num_experts);
+
+        if(num_experts>0)
+            cudaMemcpy(
+                d_expert_offsets,
+                d_tmp_offsets,
+                (size_t)num_experts*sizeof(int),
+                cudaMemcpyDeviceToDevice);
     }
 
-    if (total_slots > 0) {
-        int threads = 128;
-        int blocks = (total_slots + threads - 1) / threads;
+    int* d_fill=nullptr;
+    if(num_experts>0){
+        cudaMalloc(&d_fill,
+                   (size_t)num_experts*sizeof(int));
+        cudaMemset(d_fill,0,
+                   (size_t)num_experts*sizeof(int));
+    }
 
-        count_tokens_per_expert_kernel<<<blocks, threads>>>(
+    if(S>0){
+        int th=128,bl=(S+th-1)/th;
+        assign_token_slots_kernel<<<bl,th>>>(
             d_topk_indices,
-            d_expert_token_counts,
-            num_tokens,
-            top_k,
-            num_experts
-        );
-    }
-
-    // 6. Exclusive prefix sum of expert counts
-    expert_offsets_prefix_sum_kernel<<<1, 128>>>(
-        d_expert_token_counts,
-        d_expert_offsets,
-        num_experts
-    );
-
-    // 7. Separate fill counters so the original counts remain intact
-    int* d_expert_fill = nullptr;
-
-    if (num_experts > 0) {
-        cudaMalloc(
-            &d_expert_fill,
-            (size_t)num_experts * sizeof(int)
-        );
-
-        cudaMemset(
-            d_expert_fill,
-            0,
-            (size_t)num_experts * sizeof(int)
-        );
-    }
-
-    // 8. Assign every token/top-k pair to a unique expert slot
-    if (total_slots > 0) {
-        int threads = 128;
-        int blocks = (total_slots + threads - 1) / threads;
-
-        assign_token_slots_kernel<<<blocks, threads>>>(
-            d_topk_indices,
-            d_expert_offsets,
+            d_tmp_offsets,
             d_token_source,
             d_token_slot,
-            d_expert_fill,
-            num_tokens,
-            top_k,
-            num_experts
-        );
+            d_fill,
+            num_tokens,top_k,num_experts);
     }
 
-    if (d_expert_fill != nullptr) {
-        cudaFree(d_expert_fill);
+    if(d_fill) cudaFree(d_fill);
+
+    if(S>0&&in_dim>0){
+        int n=S*in_dim,th=128,bl=(n+th-1)/th;
+        gather_tokens_to_experts_kernel<<<bl,th>>>(
+            d_input,d_token_source,d_gathered_input,S,in_dim);
     }
 
-    // 9. Gather tokens into dispatched order
-    if (total_slots > 0 && in_dim > 0) {
-        int n = total_slots * in_dim;
-        int threads = 128;
-        int blocks = (n + threads - 1) / threads;
-
-        gather_tokens_to_experts_kernel<<<blocks, threads>>>(
-            d_input,
-            d_token_source,
-            d_gathered_input,
-            total_slots,
-            in_dim
-        );
-    }
-
-    // 10. Copy expert offsets to host so each expert slice can be processed
-    int* h_offsets = new int[num_experts + 1];
+    int* h_offsets=new int[num_experts+1];
 
     cudaMemcpy(
         h_offsets,
-        d_expert_offsets,
-        (size_t)(num_experts + 1) * sizeof(int),
-        cudaMemcpyDeviceToHost
-    );
+        d_tmp_offsets,
+        (size_t)(num_experts+1)*sizeof(int),
+        cudaMemcpyDeviceToHost);
 
-    // 11. Run each expert MLP on its contiguous bucket
-    for (int e = 0; e < num_experts; ++e) {
-        int offset = h_offsets[e];
-        int num_expert_tokens = h_offsets[e + 1] - offset;
+    for(int e=0;e<num_experts;e++){
+        int off=h_offsets[e];
+        int n=h_offsets[e+1]-off;
+        if(n<=0) continue;
 
-        if (num_expert_tokens <= 0) {
-            continue;
-        }
+        const float* wu=d_w_up+(size_t)e*in_dim*hidden_dim;
+        const float* bu=d_b_up+(size_t)e*hidden_dim;
+        const float* wd=d_w_down+(size_t)e*hidden_dim*out_dim;
+        const float* bd=d_b_down+(size_t)e*out_dim;
 
-        const float* w_up =
-            d_w_up + (size_t)e * in_dim * hidden_dim;
-
-        const float* b_up =
-            d_b_up + (size_t)e * hidden_dim;
-
-        const float* w_down =
-            d_w_down + (size_t)e * hidden_dim * out_dim;
-
-        const float* b_down =
-            d_b_down + (size_t)e * out_dim;
-
-        float* x_e =
-            d_gathered_input + (size_t)offset * in_dim;
-
-        float* hpre_e =
-            d_hidden_pre + (size_t)offset * hidden_dim;
-
-        float* hpost_e =
-            d_hidden_post + (size_t)offset * hidden_dim;
-
-        float* output_e =
-            d_expert_output + (size_t)offset * out_dim;
+        float* x=d_gathered_input+(size_t)off*in_dim;
+        float* hp=d_hidden_pre+(size_t)off*hidden_dim;
+        float* ho=d_hidden_post+(size_t)off*hidden_dim;
+        float* y=d_expert_output+(size_t)off*out_dim;
 
         expert_up_projection_forward(
-            x_e,
-            w_up,
-            hpre_e,
-            num_expert_tokens,
-            in_dim,
-            hidden_dim
-        );
-
+            x,wu,hp,n,in_dim,hidden_dim);
         expert_up_projection_add_bias(
-            hpre_e,
-            b_up,
-            num_expert_tokens,
-            hidden_dim
-        );
-
+            hp,bu,n,hidden_dim);
         expert_hidden_activation_forward(
-            hpre_e,
-            hpost_e,
-            num_expert_tokens,
-            hidden_dim
-        );
-
+            hp,ho,n,hidden_dim);
         expert_down_projection_forward(
-            hpost_e,
-            w_down,
-            output_e,
-            num_expert_tokens,
-            hidden_dim,
-            out_dim
-        );
-
+            ho,wd,y,n,hidden_dim,out_dim);
         expert_down_projection_add_bias(
-            output_e,
-            b_down,
-            num_expert_tokens,
-            out_dim
-        );
+            y,bd,n,out_dim);
     }
 
     delete[] h_offsets;
 
-    // 12. Zero final output before weighted combine
-    if (num_tokens > 0 && out_dim > 0) {
+    if(d_tmp_offsets) cudaFree(d_tmp_offsets);
+
+    if(num_tokens>0&&out_dim>0)
         cudaMemset(
-            d_output,
-            0,
-            (size_t)num_tokens * out_dim * sizeof(float)
-        );
-    }
+            d_output,0,
+            (size_t)num_tokens*out_dim*sizeof(float));
 
-    // 13. Weighted combine of expert outputs back to token order
-    if (total_slots > 0 && out_dim > 0) {
-        dim3 block(16, 16);
-        dim3 grid(
-            (total_slots + 15) / 16,
-            (out_dim + 15) / 16
-        );
+    if(S>0&&out_dim>0){
+        dim3 block(16,16);
+        dim3 grid((S+15)/16,(out_dim+15)/16);
 
-        combine_expert_outputs_kernel<<<grid, block>>>(
+        combine_expert_outputs_kernel<<<grid,block>>>(
             d_expert_output,
             d_token_source,
             d_token_slot,
             d_topk_gates,
             d_output,
-            total_slots,
-            top_k,
-            out_dim
-        );
+            S,top_k,out_dim);
     }
 }
 
 # Step 50 - moe_backward
 __global__ void topk_grad_scatter_kernel(
-    const float* src,
-    const int* idx,
-    float* dst,
-    int T,
-    int E,
-    int K
-) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    int n = T * K;
-
-    if (i >= n) return;
-
-    int t = i / K;
-    int e = idx[i];
-
-    if (e >= 0 && e < E)
-        atomicAdd(&dst[t * E + e], src[i]);
-}
-
-__global__ void aux_grad_from_counts_kernel(
-    const int* counts,
-    float* grad,
-    int T,
-    int E,
-    int K,
-    float scale
-) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    int n = T * E;
-
-    if (i >= n || T <= 0 || K <= 0) return;
-
-    int e = i % E;
-
-    grad[i] +=
-        scale * (float)E * (float)counts[e] /
-        ((float)T * (float)T * (float)K);
+    const float* src,const int* idx,float* dst,int T,int E,int K
+){
+    int i=blockIdx.x*blockDim.x+threadIdx.x;
+    int n=T*K;
+    if(i>=n)return;
+    int t=i/K;
+    int e=idx[i];
+    if(e>=0&&e<E) atomicAdd(&dst[t*E+e],src[i]);
 }
 
 void moe_backward(
-    const float* d_input,
-    const float* d_w_gate,
-    const float* d_w_up,
-    const float* d_b_up,
-    const float* d_w_down,
-    const float* d_b_down,
-    const float* d_router_logits,
-    const float* d_router_probs,
-    const float* d_topk_values,
-    const int* d_topk_indices,
+    const float* d_input,const float* d_w_gate,const float* d_w_up,
+    const float* d_b_up,const float* d_w_down,const float* d_b_down,
+    const float* d_router_logits,const float* d_router_probs,
+    const float* d_topk_values,const int* d_topk_indices,
     const float* d_topk_gates,
-    const int* d_expert_token_counts,
-    const int* d_expert_offsets,
-    const int* d_token_slot,
-    const int* d_token_source,
-    const float* d_gathered_input,
-    const float* d_hidden_pre,
-    const float* d_hidden_post,
-    const float* d_expert_output,
+    const int* d_expert_token_counts,const int* d_expert_offsets,
+    const int* d_token_slot,const int* d_token_source,
+    const float* d_gathered_input,const float* d_hidden_pre,
+    const float* d_hidden_post,const float* d_expert_output,
     const float* d_grad_output,
-    float* d_grad_expert_output,
-    float* d_grad_gathered_input,
-    float* d_grad_hidden_post,
-    float* d_grad_hidden_pre,
-    float* d_grad_topk_gates,
-    float* d_grad_topk_values,
-    float* d_grad_router_probs,
-    float* d_grad_router_logits,
-    float* d_grad_input,
-    float* d_grad_w_gate,
-    float* d_grad_w_up,
-    float* d_grad_b_up,
-    float* d_grad_w_down,
-    float* d_grad_b_down,
-    int T,
-    int D,
-    int H,
-    int O,
-    int E,
-    int K,
-    float aux_loss_scale
-) {
-    int S = T * K;
+    float* d_grad_expert_output,float* d_grad_gathered_input,
+    float* d_grad_hidden_post,float* d_grad_hidden_pre,
+    float* d_grad_topk_gates,float* d_grad_topk_values,
+    float* d_grad_router_probs,float* d_grad_router_logits,
+    float* d_grad_input,float* d_grad_w_gate,
+    float* d_grad_w_up,float* d_grad_b_up,
+    float* d_grad_w_down,float* d_grad_b_down,
+    int num_tokens,int in_dim,int hidden_dim,int out_dim,
+    int num_experts,int top_k,float aux_loss_scale
+){
+    int S=num_tokens*top_k;
 
-    zero_buffer(d_grad_expert_output, S * O);
-    zero_buffer(d_grad_gathered_input, S * D);
-    zero_buffer(d_grad_hidden_post, S * H);
-    zero_buffer(d_grad_hidden_pre, S * H);
+    zero_buffer(d_grad_expert_output,S*out_dim);
+    zero_buffer(d_grad_gathered_input,S*in_dim);
+    zero_buffer(d_grad_hidden_post,S*hidden_dim);
+    zero_buffer(d_grad_hidden_pre,S*hidden_dim);
+    zero_buffer(d_grad_topk_gates,S);
+    zero_buffer(d_grad_topk_values,S);
 
-    zero_buffer(d_grad_topk_gates, S);
-    zero_buffer(d_grad_topk_values, S);
+    zero_buffer(d_grad_router_probs,num_tokens*num_experts);
+    zero_buffer(d_grad_router_logits,num_tokens*num_experts);
+    zero_buffer(d_grad_input,num_tokens*in_dim);
 
-    zero_buffer(d_grad_router_probs, T * E);
-    zero_buffer(d_grad_router_logits, T * E);
-    zero_buffer(d_grad_input, T * D);
+    zero_buffer(d_grad_w_gate,in_dim*num_experts);
+    zero_buffer(d_grad_w_up,num_experts*in_dim*hidden_dim);
+    zero_buffer(d_grad_b_up,num_experts*hidden_dim);
+    zero_buffer(d_grad_w_down,num_experts*hidden_dim*out_dim);
+    zero_buffer(d_grad_b_down,num_experts*out_dim);
 
-    zero_buffer(d_grad_w_gate, D * E);
-    zero_buffer(d_grad_w_up, E * D * H);
-    zero_buffer(d_grad_b_up, E * H);
-    zero_buffer(d_grad_w_down, E * H * O);
-    zero_buffer(d_grad_b_down, E * O);
+    if(S>0){
+        combine_backward_to_expert_outputs_kernel<<<S,32>>>(
+            d_grad_output,d_token_source,d_token_slot,d_topk_gates,
+            d_grad_expert_output,S,top_k,out_dim);
 
-    if (S > 0) {
-        combine_backward_to_expert_outputs_kernel<<<S, 32>>>(
-            d_grad_output,
-            d_token_source,
-            d_token_slot,
-            d_topk_gates,
-            d_grad_expert_output,
-            S,
-            K,
-            O
-        );
-
-        combine_backward_to_gates_kernel<<<
-            S, 64, 64 * sizeof(float)
-        >>>(
-            d_grad_output,
-            d_expert_output,
-            d_token_source,
-            d_token_slot,
-            d_grad_topk_gates,
-            S,
-            K,
-            O
-        );
+        combine_backward_to_gates_kernel<<<S,64,64*sizeof(float)>>>(
+            d_grad_output,d_expert_output,d_token_source,d_token_slot,
+            d_grad_topk_gates,S,top_k,out_dim);
     }
 
-    int* h_offsets = new int[E + 1];
+    int* h_offsets=new int[num_experts+1];
+    cudaMemcpy(h_offsets,d_expert_offsets,
+               (size_t)(num_experts+1)*sizeof(int),
+               cudaMemcpyDeviceToHost);
 
-    cudaMemcpy(
-        h_offsets,
-        d_expert_offsets,
-        (size_t)(E + 1) * sizeof(int),
-        cudaMemcpyDeviceToHost
-    );
+    for(int e=0;e<num_experts;e++){
+        int off=h_offsets[e];
+        int n=h_offsets[e+1]-off;
+        if(n<=0)continue;
 
-    for (int e = 0; e < E; ++e) {
-        int offset = h_offsets[e];
-        int count = h_offsets[e + 1] - offset;
+        const float* wu=d_w_up+(size_t)e*in_dim*hidden_dim;
+        const float* wd=d_w_down+(size_t)e*hidden_dim*out_dim;
+        const float* x=d_gathered_input+(size_t)off*in_dim;
+        const float* hp=d_hidden_pre+(size_t)off*hidden_dim;
+        const float* ho=d_hidden_post+(size_t)off*hidden_dim;
+        const float* gy=d_grad_expert_output+(size_t)off*out_dim;
 
-        if (count <= 0) continue;
+        float* gh=d_grad_hidden_post+(size_t)off*hidden_dim;
+        float* gp=d_grad_hidden_pre+(size_t)off*hidden_dim;
+        float* gx=d_grad_gathered_input+(size_t)off*in_dim;
 
-        const float* w_up =
-            d_w_up + (size_t)e * D * H;
-
-        const float* w_down =
-            d_w_down + (size_t)e * H * O;
-
-        const float* x =
-            d_gathered_input + (size_t)offset * D;
-
-        const float* hp =
-            d_hidden_pre + (size_t)offset * H;
-
-        const float* hpost =
-            d_hidden_post + (size_t)offset * H;
-
-        const float* gy =
-            d_grad_expert_output + (size_t)offset * O;
-
-        float* gh =
-            d_grad_hidden_post + (size_t)offset * H;
-
-        float* gp =
-            d_grad_hidden_pre + (size_t)offset * H;
-
-        float* gx =
-            d_grad_gathered_input + (size_t)offset * D;
-
-        float* gwu =
-            d_grad_w_up + (size_t)e * D * H;
-
-        float* gbu =
-            d_grad_b_up + (size_t)e * H;
-
-        float* gwd =
-            d_grad_w_down + (size_t)e * H * O;
-
-        float* gbd =
-            d_grad_b_down + (size_t)e * O;
+        float* gwu=d_grad_w_up+(size_t)e*in_dim*hidden_dim;
+        float* gbu=d_grad_b_up+(size_t)e*hidden_dim;
+        float* gwd=d_grad_w_down+(size_t)e*hidden_dim*out_dim;
+        float* gbd=d_grad_b_down+(size_t)e*out_dim;
 
         expert_down_projection_backward_input(
-            gy, w_down, gh, count, H, O
-        );
-
+            gy,wd,gh,n,hidden_dim,out_dim);
         expert_down_projection_backward_weight(
-            hpost, gy, gwd, count, H, O
-        );
-
+            ho,gy,gwd,n,hidden_dim,out_dim);
         expert_down_projection_backward_bias(
-            gy, gbd, count, O
-        );
+            gy,gbd,n,out_dim);
 
         expert_activation_backward(
-            hp, gh, gp, count, H
-        );
+            hp,gh,gp,n,hidden_dim);
 
         expert_up_projection_backward_input(
-            gp, w_up, gx, count, D, H
-        );
-
+            gp,wu,gx,n,in_dim,hidden_dim);
         expert_up_projection_backward_weight(
-            x, gp, gwu, count, D, H
-        );
-
+            x,gp,gwu,n,in_dim,hidden_dim);
         expert_up_projection_backward_bias(
-            gp, gbu, count, H
-        );
+            gp,gbu,n,hidden_dim);
     }
 
     delete[] h_offsets;
 
-    if (T > 0 && K > 0) {
+    if(num_tokens>0&&top_k>0){
         normalize_topk_gates_backward_kernel<<<
-            T, 64, 2 * 64 * sizeof(float)
+            num_tokens,64,2*64*sizeof(float)
         >>>(
-            d_topk_values,
-            d_topk_gates,
-            d_grad_topk_gates,
-            d_grad_topk_values,
-            T,
-            K
-        );
+            d_topk_values,d_topk_gates,
+            d_grad_topk_gates,d_grad_topk_values,
+            num_tokens,top_k);
     }
 
-    if (S > 0 && E > 0) {
-        int threads = 256;
-        int blocks = (S + threads - 1) / threads;
+    if(S>0&&num_experts>0){
+        int threads=256;
+        int blocks=(S+threads-1)/threads;
 
-        topk_grad_scatter_kernel<<<blocks, threads>>>(
-            d_grad_topk_values,
-            d_topk_indices,
-            d_grad_router_probs,
-            T,
-            E,
-            K
-        );
+        topk_grad_scatter_kernel<<<blocks,threads>>>(
+            d_grad_topk_values,d_topk_indices,
+            d_grad_router_probs,num_tokens,num_experts,top_k);
     }
 
-    if (T > 0 && E > 0 && K > 0) {
-        int n = T * E;
-        int threads = 256;
-        int blocks = (n + threads - 1) / threads;
+    if(num_tokens>0&&num_experts>0){
+        float* d_frac=nullptr;
 
-        aux_grad_from_counts_kernel<<<blocks, threads>>>(
+        cudaMalloc(
+            &d_frac,
+            (size_t)num_experts*sizeof(float)
+        );
+
+        compute_dispatch_fractions(
             d_expert_token_counts,
+            d_frac,
+            num_tokens,
+            top_k,
+            num_experts
+        );
+
+        load_balancing_aux_loss_backward(
+            d_frac,
             d_grad_router_probs,
-            T,
-            E,
-            K,
+            num_tokens,
+            num_experts,
             aux_loss_scale
         );
+
+        cudaFree(d_frac);
     }
 
-    if (T > 0 && E > 0) {
+    if(num_tokens>0&&num_experts>0){
         softmax_rows_backward_kernel<<<
-            T, 256, 256 * sizeof(float)
+            num_tokens,256,256*sizeof(float)
         >>>(
             d_router_probs,
             d_grad_router_probs,
             d_grad_router_logits,
-            T,
-            E
+            num_tokens,
+            num_experts
         );
 
         router_gate_weight_backward(
             d_input,
             d_grad_router_logits,
             d_grad_w_gate,
-            T,
-            D,
-            E
+            num_tokens,
+            in_dim,
+            num_experts
         );
 
-        dim3 block(16, 16);
+        dim3 block(16,16);
         dim3 grid(
-            (D + 15) / 16,
-            (T + 15) / 16
+            (in_dim+15)/16,
+            (num_tokens+15)/16
         );
 
-        matmul_a_bt_kernel<<<grid, block>>>(
+        matmul_a_bt_kernel<<<grid,block>>>(
             d_grad_router_logits,
             d_w_gate,
             d_grad_input,
-            T,
-            D,
-            E
+            num_tokens,
+            in_dim,
+            num_experts
         );
     }
 
-    if (S > 0 && D > 0) {
-        int n = S * D;
-        int threads = 256;
-        int blocks = (n + threads - 1) / threads;
+    if(S>0&&in_dim>0){
+        int n=S*in_dim;
+        int threads=256;
+        int blocks=(n+threads-1)/threads;
 
-        scatter_grads_to_tokens_kernel<<<blocks, threads>>>(
+        scatter_grads_to_tokens_kernel<<<blocks,threads>>>(
             d_grad_gathered_input,
             d_token_source,
             d_topk_gates,
             d_grad_input,
             S,
-            D
+            in_dim
         );
     }
 }
