@@ -801,8 +801,31 @@ __global__ void assign_token_slots_kernel(
     slot_k_idx[slot] = k;
 }
 
-# Step 24 - gather_tokens_to_experts_kernel (not yet solved)
-# TODO: implement
+# Step 24 - gather_tokens_to_experts_kernel
+__global__ void gather_tokens_to_experts_kernel(
+    const float* X,
+    const int* slot_token_idx,
+    float* X_dispatched,
+    int total_slots,
+    int D
+) {
+    // One thread handles one (slot, feature) element.
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int total = total_slots * D;
+
+    if (idx >= total) {
+        return;
+    }
+
+    int slot = idx / D;
+    int d = idx % D;
+
+    // Find the source token for this dispatched slot.
+    int token = slot_token_idx[slot];
+
+    // Copy the corresponding feature.
+    X_dispatched[slot * D + d] = X[token * D + d];
+}
 
 # Step 25 - scatter_grads_to_tokens_kernel (not yet solved)
 # TODO: implement

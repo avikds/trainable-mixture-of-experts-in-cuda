@@ -33,7 +33,7 @@ python scaffold.py
 - [x] **21.** count_tokens_per_expert_kernel
 - [x] **22.** expert_offsets_prefix_sum_kernel
 - [x] **23.** assign_token_slots_kernel
-- [ ] **24.** gather_tokens_to_experts_kernel
+- [x] **24.** gather_tokens_to_experts_kernel
 - [ ] **25.** scatter_grads_to_tokens_kernel
 - [ ] **26.** combine_expert_outputs_kernel
 - [ ] **27.** combine_backward_to_expert_outputs_kernel
