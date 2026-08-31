@@ -760,8 +760,46 @@ __global__ void expert_offsets_prefix_sum_kernel(
     }
 }
 
-# Step 23 - assign_token_slots_kernel (not yet solved)
-# TODO: implement
+# Step 23 - assign_token_slots_kernel
+__global__ void assign_token_slots_kernel(
+    const int* topk_experts,
+    const int* expert_offsets,
+    int* slot_token_idx,
+    int* slot_k_idx,
+    int* expert_fill,
+    int T,
+    int K,
+    int E
+) {
+    // One thread handles one (token, k) assignment.
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int total = T * K;
+
+    if (idx >= total) {
+        return;
+    }
+
+    // Recover token index and top-k slot.
+    int token = idx / K;
+    int k = idx % K;
+
+    int expert = topk_experts[idx];
+
+    // Guard against invalid expert ids.
+    if (expert < 0 || expert >= E) {
+        return;
+    }
+
+    // Atomically claim the next available slot in this expert's bucket.
+    int local_offset = atomicAdd(&expert_fill[expert], 1);
+
+    // Convert the expert-local offset into a global slot index.
+    int slot = expert_offsets[expert] + local_offset;
+
+    // Record the source token and its top-k position.
+    slot_token_idx[slot] = token;
+    slot_k_idx[slot] = k;
+}
 
 # Step 24 - gather_tokens_to_experts_kernel (not yet solved)
 # TODO: implement
