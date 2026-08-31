@@ -677,8 +677,43 @@ void router_topk_experts(
     );
 }
 
-# Step 20 - router_gate_weight_backward (not yet solved)
-# TODO: implement
+# Step 20 - router_gate_weight_backward
+void router_gate_weight_backward(
+    const float* X,
+    const float* dlogits,
+    float* dWg,
+    int T,
+    int D,
+    int E
+) {
+    // X       : T x D
+    // dlogits : T x E
+    // dWg     : D x E
+    //
+    // matmul_at_b_kernel expects:
+    // A: K x M
+    // B: K x N
+    // C: M x N
+    //
+    // Set:
+    // K = T, M = D, N = E
+    // so C = X^T * dlogits.
+
+    dim3 block(16, 16);
+    dim3 grid(
+        (E + 15) / 16,
+        (D + 15) / 16
+    );
+
+    matmul_at_b_kernel<<<grid, block>>>(
+        X,
+        dlogits,
+        dWg,
+        D,
+        E,
+        T
+    );
+}
 
 # Step 21 - count_tokens_per_expert_kernel (not yet solved)
 # TODO: implement
