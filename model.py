@@ -1192,8 +1192,51 @@ void expert_down_projection_backward_input(
     );
 }
 
-# Step 35 - expert_down_projection_backward_weight (not yet solved)
-# TODO: implement
+# Step 35 - expert_down_projection_backward_weight
+void expert_down_projection_backward_weight(
+    const float* d_hidden_post,
+    const float* d_grad_output,
+    float* d_grad_w_down,
+    int num_tokens,
+    int hidden_dim,
+    int out_dim
+) {
+    // Nothing to do for an empty expert bucket.
+    if (num_tokens == 0) {
+        return;
+    }
+
+    // d_hidden_post : num_tokens x hidden_dim
+    // d_grad_output : num_tokens x out_dim
+    // d_grad_w_down : hidden_dim x out_dim
+    //
+    // Compute:
+    // d_grad_w_down = d_hidden_post^T @ d_grad_output
+    //
+    // matmul_at_b_kernel computes:
+    // C = A^T @ B
+    // where A is K x M and B is K x N.
+    //
+    // Set:
+    // K = num_tokens
+    // M = hidden_dim
+    // N = out_dim
+
+    dim3 block(16, 16);
+    dim3 grid(
+        (out_dim + 15) / 16,
+        (hidden_dim + 15) / 16
+    );
+
+    matmul_at_b_kernel<<<grid, block>>>(
+        d_hidden_post,
+        d_grad_output,
+        d_grad_w_down,
+        hidden_dim,
+        out_dim,
+        num_tokens
+    );
+}
 
 # Step 36 - expert_down_projection_backward_bias (not yet solved)
 # TODO: implement
