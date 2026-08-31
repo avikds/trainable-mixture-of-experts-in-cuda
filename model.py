@@ -2274,7 +2274,8 @@ void moe_training_step(Context ctx,const float* d_input,
 }
 
 # Step 52 - moe_training_loop
-void moe_training_loop(MoEContext& ctx,const float* d_input,
+template <typename Context>
+void moe_training_loop(Context& ctx,const float* d_input,
                        const float* d_target,float learning_rate,
                        float aux_loss_scale,int num_steps,
                        float* h_loss_history) {
