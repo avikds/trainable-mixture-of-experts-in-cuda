@@ -12,7 +12,7 @@ python scaffold.py
 
 - [x] **1.** matmul_naive_kernel
 - [x] **2.** matmul_tiled_kernel
-- [ ] **3.** matmul_at_b_kernel
+- [x] **3.** matmul_at_b_kernel
 - [ ] **4.** matmul_a_bt_kernel
 - [ ] **5.** add_bias_row_kernel
 - [ ] **6.** reduce_rows_to_bias_grad_kernel
