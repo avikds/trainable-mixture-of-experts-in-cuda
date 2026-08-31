@@ -35,7 +35,7 @@ python scaffold.py
 - [x] **23.** assign_token_slots_kernel
 - [x] **24.** gather_tokens_to_experts_kernel
 - [x] **25.** scatter_grads_to_tokens_kernel
-- [ ] **26.** combine_expert_outputs_kernel
+- [x] **26.** combine_expert_outputs_kernel
 - [ ] **27.** combine_backward_to_expert_outputs_kernel
 - [ ] **28.** combine_backward_to_gates_kernel
 - [ ] **29.** expert_up_projection_forward

@@ -861,8 +861,43 @@ __global__ void scatter_grads_to_tokens_kernel(
     );
 }
 
-# Step 26 - combine_expert_outputs_kernel (not yet solved)
-# TODO: implement
+# Step 26 - combine_expert_outputs_kernel
+__global__ void combine_expert_outputs_kernel(
+    const float* Y_dispatched,
+    const int* slot_token_idx,
+    const int* slot_k_idx,
+    const float* gates,
+    float* Y,
+    int total_slots,
+    int K,
+    int D_out
+) {
+    // Each thread handles one (slot, output-feature) pair.
+    int slot = blockIdx.x * blockDim.x + threadIdx.x;
+    int d = blockIdx.y * blockDim.y + threadIdx.y;
+
+    // Guard both dimensions.
+    if (slot >= total_slots || d >= D_out) {
+        return;
+    }
+
+    // Recover the destination token and its top-k gate index.
+    int token = slot_token_idx[slot];
+    int k = slot_k_idx[slot];
+
+    // Gate value for this token/slot.
+    float gate = gates[token * K + k];
+
+    // Weighted expert output contribution.
+    float contribution = gate * Y_dispatched[slot * D_out + d];
+
+    // Multiple slots can contribute to the same token/output element,
+    // so atomically accumulate the result.
+    atomicAdd(
+        &Y[token * D_out + d],
+        contribution
+    );
+}
 
 # Step 27 - combine_backward_to_expert_outputs_kernel (not yet solved)
 # TODO: implement
